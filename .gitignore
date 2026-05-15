@@ -8,3 +8,15 @@ venv/
 .mypy_cache/
 .ruff_cache/
 *.log
+
+# Local release/build artifacts
+release/
+*.zip
+*.tar
+*.tar.gz
+*.tgz
+
+# Local tooling/cache output
+.coverage
+coverage/
+htmlcov/
