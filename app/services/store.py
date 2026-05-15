@@ -137,10 +137,10 @@ def update_agent(agent_id, req, user):
         cursor.execute(
             f"""
             INSERT INTO {AGENT_VERSION_TABLE}
-              (agent_id, version, content, created_by_user_id, created_by_username, created_at)
-            VALUES (%s,%s,%s,%s,%s,%s)
+              (agent_id, version, content, tags, created_by_user_id, created_by_username, created_at)
+            VALUES (%s,%s,%s,%s,%s,%s,%s)
             """,
-            (agent_id, row["version"], row["content"], user.user_id, user.username, now),
+            (agent_id, row["version"], row["content"], row.get("tags"), user.user_id, user.username, now),
         )
         cursor.execute(
             f"""
@@ -210,12 +210,12 @@ def rollback_agent(agent_id, version_id, user):
             return None
         ensure_can_edit(row, user.user_id)
         cursor.execute(
-            f"INSERT INTO {AGENT_VERSION_TABLE} (agent_id,version,content,created_by_user_id,created_by_username,created_at) VALUES (%s,%s,%s,%s,%s,%s)",
-            (agent_id, row["version"], row["content"], user.user_id, user.username, now),
+            f"INSERT INTO {AGENT_VERSION_TABLE} (agent_id,version,content,tags,created_by_user_id,created_by_username,created_at) VALUES (%s,%s,%s,%s,%s,%s,%s)",
+            (agent_id, row["version"], row["content"], row.get("tags"), user.user_id, user.username, now),
         )
         cursor.execute(
-            f"UPDATE {AGENT_TABLE} SET content=%s,version=%s,updated_by_user_id=%s,updated_by_username=%s,updated_at=%s WHERE id=%s",
-            (version["content"], _next_version(row["version"]), user.user_id, user.username, now, agent_id),
+            f"UPDATE {AGENT_TABLE} SET content=%s,tags=%s,version=%s,updated_by_user_id=%s,updated_by_username=%s,updated_at=%s WHERE id=%s",
+            (version["content"], version.get("tags"), _next_version(row["version"]), user.user_id, user.username, now, agent_id),
         )
     return get_agent(agent_id, user)
 
@@ -305,8 +305,25 @@ def update_scenario(scenario_id, req, user):
             current["related_agents"] = _json_text(req.related_agents)
         content = _scenario_yaml({**current, "related_agents": _json_loads(current["related_agents"], {})})
         cursor.execute(
-            f"INSERT INTO {SCENARIO_VERSION_TABLE} (scenario_id,version,content,created_by_user_id,created_by_username,created_at) VALUES (%s,%s,%s,%s,%s,%s)",
-            (scenario_id, row["version"], row.get("content") or "", user.user_id, user.username, now),
+            f"""
+            INSERT INTO {SCENARIO_VERSION_TABLE}
+              (scenario_id,version,content,description,sub_type_hint,keyword_hint,
+               skill_selector_dims,related_agents,created_by_user_id,created_by_username,created_at)
+            VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+            """,
+            (
+                scenario_id,
+                row["version"],
+                row.get("content") or "",
+                row.get("description"),
+                row.get("sub_type_hint"),
+                row.get("keyword_hint"),
+                row.get("skill_selector_dims"),
+                row.get("related_agents"),
+                user.user_id,
+                user.username,
+                now,
+            ),
         )
         cursor.execute(
             f"""
@@ -387,12 +404,47 @@ def rollback_scenario(scenario_id, version_id, user):
             return None
         ensure_can_edit(row, user.user_id)
         cursor.execute(
-            f"INSERT INTO {SCENARIO_VERSION_TABLE} (scenario_id,version,content,created_by_user_id,created_by_username,created_at) VALUES (%s,%s,%s,%s,%s,%s)",
-            (scenario_id, row["version"], row.get("content") or "", user.user_id, user.username, now),
+            f"""
+            INSERT INTO {SCENARIO_VERSION_TABLE}
+              (scenario_id,version,content,description,sub_type_hint,keyword_hint,
+               skill_selector_dims,related_agents,created_by_user_id,created_by_username,created_at)
+            VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+            """,
+            (
+                scenario_id,
+                row["version"],
+                row.get("content") or "",
+                row.get("description"),
+                row.get("sub_type_hint"),
+                row.get("keyword_hint"),
+                row.get("skill_selector_dims"),
+                row.get("related_agents"),
+                user.user_id,
+                user.username,
+                now,
+            ),
         )
         cursor.execute(
-            f"UPDATE {SCENARIO_TABLE} SET content=%s,version=%s,updated_by_user_id=%s,updated_by_username=%s,updated_at=%s WHERE id=%s",
-            (version["content"], _next_version(row["version"]), user.user_id, user.username, now, scenario_id),
+            f"""
+            UPDATE {SCENARIO_TABLE}
+               SET description=%s,sub_type_hint=%s,keyword_hint=%s,skill_selector_dims=%s,
+                   related_agents=%s,content=%s,version=%s,updated_by_user_id=%s,
+                   updated_by_username=%s,updated_at=%s
+             WHERE id=%s
+            """,
+            (
+                version.get("description"),
+                version.get("sub_type_hint"),
+                version.get("keyword_hint"),
+                version.get("skill_selector_dims"),
+                version.get("related_agents"),
+                version["content"],
+                _next_version(row["version"]),
+                user.user_id,
+                user.username,
+                now,
+                scenario_id,
+            ),
         )
     return get_scenario(scenario_id, user)
 

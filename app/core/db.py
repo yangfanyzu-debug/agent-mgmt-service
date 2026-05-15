@@ -43,3 +43,16 @@ def init_schema():
     with db_cursor(commit=True) as cursor:
         for statement in statements:
             cursor.execute(statement)
+        _ensure_column(cursor, "agent_mgmt_agent_version", "tags", "VARCHAR(500) DEFAULT NULL AFTER `content`")
+        _ensure_column(cursor, "agent_mgmt_scenario_version", "description", "TEXT DEFAULT NULL AFTER `content`")
+        _ensure_column(cursor, "agent_mgmt_scenario_version", "sub_type_hint", "VARCHAR(500) DEFAULT NULL AFTER `description`")
+        _ensure_column(cursor, "agent_mgmt_scenario_version", "keyword_hint", "VARCHAR(500) DEFAULT NULL AFTER `sub_type_hint`")
+        _ensure_column(cursor, "agent_mgmt_scenario_version", "skill_selector_dims", "VARCHAR(500) DEFAULT NULL AFTER `keyword_hint`")
+        _ensure_column(cursor, "agent_mgmt_scenario_version", "related_agents", "TEXT DEFAULT NULL AFTER `skill_selector_dims`")
+
+
+def _ensure_column(cursor, table, column, ddl):
+    cursor.execute(f"SHOW COLUMNS FROM `{table}` LIKE %s", (column,))
+    if cursor.fetchone():
+        return
+    cursor.execute(f"ALTER TABLE `{table}` ADD COLUMN `{column}` {ddl}")

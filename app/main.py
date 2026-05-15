@@ -117,7 +117,7 @@ def deactivate_agent(agent_id: int, user: CurrentUser = Depends(get_current_user
 
 
 @app.get("/agents/{agent_id}/versions")
-def list_agent_versions(agent_id: int):
+def list_agent_versions(agent_id: int, user: CurrentUser = Depends(get_current_user)):
     return store.list_agent_versions(agent_id)
 
 
@@ -197,7 +197,7 @@ def deactivate_scenario(scenario_id: int, user: CurrentUser = Depends(get_curren
 
 
 @app.get("/scenarios/{scenario_id}/versions")
-def list_scenario_versions(scenario_id: int):
+def list_scenario_versions(scenario_id: int, user: CurrentUser = Depends(get_current_user)):
     return store.list_scenario_versions(scenario_id)
 
 
