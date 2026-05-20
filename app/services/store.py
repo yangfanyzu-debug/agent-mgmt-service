@@ -474,6 +474,26 @@ def list_logs(scenario_name, system_id, alert_key, page, page_size):
     return {"total": total, "page": page, "page_size": page_size, "items": items}
 
 
+def list_logs_by_alert_key(alert_key, page, page_size):
+    alert_expr = "CASE WHEN JSON_VALID(extra_data) THEN JSON_UNQUOTE(JSON_EXTRACT(extra_data, '$.alert_key')) ELSE NULL END"
+    offset = (page - 1) * page_size
+    with db_cursor() as cursor:
+        cursor.execute(f"SELECT COUNT(*) AS total FROM {LOG_TABLE} WHERE {alert_expr}=%s", (alert_key,))
+        total = cursor.fetchone()["total"]
+        cursor.execute(
+            f"""
+            SELECT id,scenario_id,scenario_name,log_name,extra_data,remark,html_content,created_at
+              FROM {LOG_TABLE}
+             WHERE {alert_expr}=%s
+             ORDER BY created_at DESC
+             LIMIT %s OFFSET %s
+            """,
+            (alert_key, page_size, offset),
+        )
+        items = cursor.fetchall()
+    return {"total": total, "page": page, "page_size": page_size, "items": items}
+
+
 def log_stats(scenario_name):
     where = " WHERE scenario_name=%s" if scenario_name else ""
     params = (scenario_name,) if scenario_name else ()

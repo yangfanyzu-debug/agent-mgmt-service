@@ -220,6 +220,15 @@ def list_logs(
     return store.list_logs(scenario_name, system_id, alert_key, page, page_size)
 
 
+@app.get("/logs/by-alert-key", response_model=ExecutionLogPage)
+def list_logs_by_alert_key(
+    alert_key: str = Query(..., min_length=1),
+    page: int = Query(1, ge=1),
+    page_size: int = Query(20, ge=1, le=100),
+):
+    return store.list_logs_by_alert_key(alert_key, page, page_size)
+
+
 @app.get("/logs/stats")
 def log_stats(scenario_name: str = None):
     return store.log_stats(scenario_name)
