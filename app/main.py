@@ -59,9 +59,15 @@ def list_agents(
     scope: str = Query("mine", pattern="^(mine|all)$"),
     status: str = None,
     type: str = Query(None),
+    category_codes: str = Query(None),
     user: CurrentUser = Depends(get_current_user),
 ):
-    return store.list_agents(user, scope, status, type)
+    return store.list_agents(user, scope, status, type, category_codes)
+
+
+@app.get("/agent-categories")
+def list_agent_categories(user: CurrentUser = Depends(get_current_user)):
+    return store.list_agent_categories()
 
 
 @app.post("/agents", status_code=201)
@@ -70,6 +76,8 @@ def create_agent(req: AgentCreate, user: CurrentUser = Depends(get_current_user)
         return store.create_agent(req, user)
     except IntegrityError as exc:
         _duplicate_error(exc)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
 @app.get("/agents/{agent_id}")
@@ -82,7 +90,10 @@ def get_agent(agent_id: int, user: CurrentUser = Depends(get_current_user)):
 
 @app.put("/agents/{agent_id}")
 def update_agent(agent_id: int, req: AgentUpdate, user: CurrentUser = Depends(get_current_user)):
-    row = store.update_agent(agent_id, req, user)
+    try:
+        row = store.update_agent(agent_id, req, user)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
     if not row:
         raise HTTPException(status_code=404, detail="Agent not found")
     return row
@@ -119,6 +130,22 @@ def deactivate_agent(agent_id: int, user: CurrentUser = Depends(get_current_user
 @app.get("/agents/{agent_id}/versions")
 def list_agent_versions(agent_id: int, user: CurrentUser = Depends(get_current_user)):
     return store.list_agent_versions(agent_id)
+
+
+@app.post("/agents/{agent_id}/versions/{version_id}/activate")
+def activate_agent_version(agent_id: int, version_id: int, user: CurrentUser = Depends(get_current_user)):
+    result = store.activate_agent_version(agent_id, version_id, user)
+    if not result:
+        raise HTTPException(status_code=404, detail="Agent or version not found")
+    return result
+
+
+@app.get("/agents/{agent_id}/related-scenarios")
+def list_agent_related_scenarios(agent_id: int, user: CurrentUser = Depends(get_current_user)):
+    rows = store.list_agent_related_scenarios(agent_id, user)
+    if rows is None:
+        raise HTTPException(status_code=404, detail="Agent not found")
+    return rows
 
 
 @app.post("/agents/{agent_id}/rollback")

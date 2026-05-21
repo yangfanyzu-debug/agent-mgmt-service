@@ -11,6 +11,7 @@ from app.services.permissions import add_can_edit, ensure_can_edit
 
 AGENT_TABLE = "agent_mgmt_agent"
 AGENT_VERSION_TABLE = "agent_mgmt_agent_version"
+AGENT_CATEGORY_TABLE = "agent_mgmt_agent_category"
 SCENARIO_TABLE = "agent_mgmt_scenario"
 SCENARIO_VERSION_TABLE = "agent_mgmt_scenario_version"
 LOG_TABLE = "agent_mgmt_execution_log"
@@ -66,13 +67,116 @@ def _select_one(cursor, sql, params=()):
     return cursor.fetchone()
 
 
+def _normalize_agent_row(row):
+    if not row:
+        return row
+    if not row.get("active_version"):
+        row["active_version"] = row.get("version")
+    if row.get("active_content") is None:
+        row["active_content"] = row.get("content")
+    if row.get("active_tags") is None:
+        row["active_tags"] = row.get("tags")
+    return row
+
+
+def _agent_scenario_relations(cursor, agent_name):
+    cursor.execute(
+        f"""
+        SELECT id, scenario_name, description, status, related_agents, updated_at
+          FROM {SCENARIO_TABLE}
+         ORDER BY updated_at DESC
+        """
+    )
+    relations = []
+    for scenario in cursor.fetchall():
+        related = _json_loads(scenario.get("related_agents"), {})
+        if related.get("planner") == agent_name:
+            relations.append({
+                "id": scenario["id"],
+                "scenario_name": scenario["scenario_name"],
+                "description": scenario.get("description"),
+                "status": scenario.get("status"),
+                "role": "planner",
+                "enabled": True,
+                "updated_at": scenario.get("updated_at"),
+            })
+        for expert in related.get("experts", []):
+            if expert.get("name") == agent_name:
+                relations.append({
+                    "id": scenario["id"],
+                    "scenario_name": scenario["scenario_name"],
+                    "description": scenario.get("description"),
+                    "status": scenario.get("status"),
+                    "role": "expert",
+                    "enabled": expert.get("enabled", True),
+                    "updated_at": scenario.get("updated_at"),
+                })
+    return relations
+
+
+def _build_category_tree(rows):
+    nodes = []
+    lookup = {}
+    for row in rows:
+        node = {
+            "id": row["id"],
+            "parent_id": row.get("parent_id"),
+            "category_code": row["category_code"],
+            "category_name": row["category_name"],
+            "label": row["category_name"],
+            "value": row["category_code"],
+            "children": [],
+        }
+        lookup[node["id"]] = node
+        nodes.append(node)
+
+    roots = []
+    for node in nodes:
+        parent = lookup.get(node.get("parent_id"))
+        if parent:
+            parent["children"].append(node)
+        else:
+            roots.append(node)
+    return roots
+
+
+def _ensure_category_exists(cursor, category_code):
+    row = _select_one(
+        cursor,
+        f"SELECT id FROM {AGENT_CATEGORY_TABLE} WHERE category_code=%s AND status='active'",
+        (category_code,),
+    )
+    if not row:
+        raise ValueError("Agent category not found")
+
+
 def check_name(table, column, name):
     with db_cursor() as cursor:
         row = _select_one(cursor, f"SELECT id FROM {table} WHERE {column}=%s", (name,))
     return row is None
 
 
-def list_agents(user, scope, status, agent_type):
+def list_agent_categories():
+    with db_cursor() as cursor:
+        cursor.execute(
+            f"""
+            SELECT id,parent_id,category_code,category_name,sort_order,status
+              FROM {AGENT_CATEGORY_TABLE}
+             WHERE status='active'
+             ORDER BY sort_order ASC,id ASC
+            """
+        )
+        rows = cursor.fetchall()
+    return _build_category_tree(rows)
+
+
+def _split_codes(value):
+    if not value:
+        return []
+    return [item.strip() for item in str(value).split(",") if item.strip()]
+
+
+def list_agents(user, scope, status, agent_type, category_codes=None):
     where = []
     params = []
     if scope == "mine":
@@ -84,17 +188,22 @@ def list_agents(user, scope, status, agent_type):
     if agent_type:
         where.append("type=%s")
         params.append(agent_type)
+    codes = _split_codes(category_codes)
+    if codes:
+        where.append("tags IN (" + ",".join(["%s"] * len(codes)) + ")")
+        params.extend(codes)
     clause = " WHERE " + " AND ".join(where) if where else ""
     with db_cursor() as cursor:
         cursor.execute(f"SELECT * FROM {AGENT_TABLE}{clause} ORDER BY updated_at DESC", tuple(params))
         rows = cursor.fetchall()
-    return add_can_edit(rows, user.user_id)
+    return add_can_edit([_normalize_agent_row(row) for row in rows], user.user_id)
 
 
 def get_agent(agent_id, user):
     with db_cursor() as cursor:
         row = _select_one(cursor, f"SELECT * FROM {AGENT_TABLE} WHERE id=%s", (agent_id,))
     if row:
+        row = _normalize_agent_row(row)
         row["can_edit"] = int(row["created_by_user_id"]) == int(user.user_id)
     return row
 
@@ -102,17 +211,20 @@ def get_agent(agent_id, user):
 def create_agent(req, user):
     now = _now()
     with db_cursor(commit=True) as cursor:
+        _ensure_category_exists(cursor, req.tags)
         cursor.execute(
             f"""
             INSERT INTO {AGENT_TABLE}
-              (agent_name, type, content, status, tags, version,
+              (agent_name, type, content, status, tags, version, active_version, active_content, active_tags,
                created_by_user_id, created_by_username, updated_by_user_id, updated_by_username,
                created_at, updated_at)
-            VALUES (%s,%s,%s,'draft',%s,'v1',%s,%s,%s,%s,%s,%s)
+            VALUES (%s,%s,%s,'draft',%s,'v1','v1',%s,%s,%s,%s,%s,%s,%s,%s)
             """,
             (
                 req.agent_name,
                 req.type,
+                req.content,
+                req.tags,
                 req.content,
                 req.tags,
                 user.user_id,
@@ -124,6 +236,25 @@ def create_agent(req, user):
             ),
         )
         new_id = cursor.lastrowid
+        cursor.execute(
+            f"""
+            INSERT INTO {AGENT_VERSION_TABLE}
+              (agent_id, version, content, tags, created_by_user_id, created_by_username,
+               created_at, is_active, activated_by_user_id, activated_by_username, activated_at)
+            VALUES (%s,'v1',%s,%s,%s,%s,%s,1,%s,%s,%s)
+            """,
+            (
+                new_id,
+                req.content,
+                req.tags,
+                user.user_id,
+                user.username,
+                now,
+                user.user_id,
+                user.username,
+                now,
+            ),
+        )
     return get_agent(new_id, user)
 
 
@@ -134,13 +265,16 @@ def update_agent(agent_id, req, user):
         if not row:
             return None
         ensure_can_edit(row, user.user_id)
+        tags = req.tags if req.tags is not None else row.get("tags")
+        _ensure_category_exists(cursor, tags)
+        next_version = _next_version(row["version"])
         cursor.execute(
             f"""
             INSERT INTO {AGENT_VERSION_TABLE}
-              (agent_id, version, content, tags, created_by_user_id, created_by_username, created_at)
-            VALUES (%s,%s,%s,%s,%s,%s,%s)
+              (agent_id, version, content, tags, created_by_user_id, created_by_username, created_at, is_active)
+            VALUES (%s,%s,%s,%s,%s,%s,%s,0)
             """,
-            (agent_id, row["version"], row["content"], row.get("tags"), user.user_id, user.username, now),
+            (agent_id, next_version, req.content, tags, user.user_id, user.username, now),
         )
         cursor.execute(
             f"""
@@ -149,7 +283,7 @@ def update_agent(agent_id, req, user):
                    updated_by_username=%s,updated_at=%s
              WHERE id=%s
             """,
-            (req.content, req.tags, _next_version(row["version"]), user.user_id, user.username, now, agent_id),
+            (req.content, tags, next_version, user.user_id, user.username, now, agent_id),
         )
     return get_agent(agent_id, user)
 
@@ -201,6 +335,59 @@ def list_agent_versions(agent_id):
         return cursor.fetchall()
 
 
+def list_agent_related_scenarios(agent_id, user):
+    with db_cursor() as cursor:
+        row = _select_one(cursor, f"SELECT * FROM {AGENT_TABLE} WHERE id=%s", (agent_id,))
+        if not row:
+            return None
+        return _agent_scenario_relations(cursor, row["agent_name"])
+
+
+def activate_agent_version(agent_id, version_id, user):
+    now = _now()
+    with db_cursor(commit=True) as cursor:
+        row = _select_one(cursor, f"SELECT * FROM {AGENT_TABLE} WHERE id=%s", (agent_id,))
+        version = _select_one(cursor, f"SELECT * FROM {AGENT_VERSION_TABLE} WHERE id=%s AND agent_id=%s", (version_id, agent_id))
+        if not row or not version:
+            return None
+        ensure_can_edit(row, user.user_id)
+        affected_scenarios = _agent_scenario_relations(cursor, row["agent_name"])
+        cursor.execute(f"UPDATE {AGENT_VERSION_TABLE} SET is_active=0 WHERE agent_id=%s", (agent_id,))
+        cursor.execute(
+            f"""
+            UPDATE {AGENT_VERSION_TABLE}
+               SET is_active=1,
+                   activated_by_user_id=%s,
+                   activated_by_username=%s,
+                   activated_at=%s
+             WHERE id=%s AND agent_id=%s
+            """,
+            (user.user_id, user.username, now, version_id, agent_id),
+        )
+        cursor.execute(
+            f"""
+            UPDATE {AGENT_TABLE}
+               SET active_version=%s,
+                   active_content=%s,
+                   active_tags=%s,
+                   updated_by_user_id=%s,
+                   updated_by_username=%s,
+                   updated_at=%s
+             WHERE id=%s
+            """,
+            (
+                version["version"],
+                version["content"],
+                version.get("tags"),
+                user.user_id,
+                user.username,
+                now,
+                agent_id,
+            ),
+        )
+    return {"agent": get_agent(agent_id, user), "affected_scenarios": affected_scenarios}
+
+
 def rollback_agent(agent_id, version_id, user):
     now = _now()
     with db_cursor(commit=True) as cursor:
@@ -210,7 +397,7 @@ def rollback_agent(agent_id, version_id, user):
             return None
         ensure_can_edit(row, user.user_id)
         cursor.execute(
-            f"INSERT INTO {AGENT_VERSION_TABLE} (agent_id,version,content,tags,created_by_user_id,created_by_username,created_at) VALUES (%s,%s,%s,%s,%s,%s,%s)",
+            f"INSERT INTO {AGENT_VERSION_TABLE} (agent_id,version,content,tags,created_by_user_id,created_by_username,created_at,is_active) VALUES (%s,%s,%s,%s,%s,%s,%s,0)",
             (agent_id, row["version"], row["content"], row.get("tags"), user.user_id, user.username, now),
         )
         cursor.execute(

@@ -21,7 +21,7 @@ class AgentCreate(BaseModel):
     agent_name: str
     type: str
     content: str
-    tags: Optional[str] = None
+    tags: str
 
     @validator("agent_name")
     def validate_name(cls, value):
@@ -35,10 +35,22 @@ class AgentCreate(BaseModel):
             raise ValueError("type must be planner or expert")
         return value
 
+    @validator("tags")
+    def validate_tags(cls, value):
+        if not value or not value.strip():
+            raise ValueError("tags is required")
+        return value.strip()
+
 
 class AgentUpdate(BaseModel):
     content: str
     tags: Optional[str] = None
+
+    @validator("tags")
+    def validate_update_tags(cls, value):
+        if value is not None and not value.strip():
+            raise ValueError("tags cannot be empty")
+        return value.strip() if value is not None else value
 
 
 class RollbackIn(BaseModel):

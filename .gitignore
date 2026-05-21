@@ -20,3 +20,6 @@ release/
 .coverage
 coverage/
 htmlcov/
+
+# Local brainstorming/mockup companion output
+.superpowers/
