@@ -14,7 +14,7 @@ load_env() {
     set +a
   fi
 
-  export AGENT_MGMT_DB_HOST="${AGENT_MGMT_DB_HOST:-192.168.0.140}"
+  export AGENT_MGMT_DB_HOST="${AGENT_MGMT_DB_HOST:-43.135.134.42}"
   export AGENT_MGMT_DB_PORT="${AGENT_MGMT_DB_PORT:-3306}"
   export AGENT_MGMT_DB_NAME="${AGENT_MGMT_DB_NAME:-ry-cloud}"
   export AGENT_MGMT_DB_USER="${AGENT_MGMT_DB_USER:-root}"

@@ -39,7 +39,7 @@ def db_cursor(commit=False):
 
 def init_schema():
     migration = Path(__file__).resolve().parents[2] / "migrations" / "001_create_agent_mgmt_tables.sql"
-    statements = [part.strip() for part in migration.read_text(encoding="utf-8").split(";") if part.strip()]
+    statements = [part.strip() for part in migration.read_text(encoding="utf-8-sig").split(";") if part.strip()]
     with db_cursor(commit=True) as cursor:
         for statement in statements:
             cursor.execute(statement)

@@ -8,7 +8,7 @@ FastAPI service for Agent and Scenario management, designed to be exposed by Ruo
 python -m venv .venv
 .venv\Scripts\activate
 pip install -r requirements.txt
-set AGENT_MGMT_DB_HOST=192.168.0.140
+set AGENT_MGMT_DB_HOST=43.135.134.42
 set AGENT_MGMT_DB_NAME=ry-cloud
 set AGENT_MGMT_DB_USER=root
 set AGENT_MGMT_DB_PASSWORD=your-password
