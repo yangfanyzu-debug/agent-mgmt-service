@@ -318,8 +318,10 @@ def llm_stats_by_scenario(
     only_failures: bool = False,
     scenario_name: str = None,
     keyword: str = None,
+    page: int = Query(1, ge=1),
+    page_size: int = Query(20, ge=1, le=100),
 ):
-    return store.llm_stats_by_scenario(days, only_failures, scenario_name, keyword)
+    return store.llm_stats_by_scenario(days, only_failures, scenario_name, keyword, page, page_size)
 
 
 @app.get("/logs/by-run/{run_id}/html", response_class=HTMLResponse)

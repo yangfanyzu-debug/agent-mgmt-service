@@ -94,7 +94,9 @@ class LlmCallStatsContractTests(unittest.TestCase):
         self.assertIn("store.llm_stats_summary(days)", main)
         self.assertIn("store.llm_stats_failures(days, page, page_size)", main)
         self.assertIn("store.llm_stats_by_run(run_id)", main)
-        self.assertIn("store.llm_stats_by_scenario(days, only_failures, scenario_name, keyword)", main)
+        self.assertIn("page: int = Query(1, ge=1)", main)
+        self.assertIn("page_size: int = Query(20, ge=1, le=100)", main)
+        self.assertIn("store.llm_stats_by_scenario(days, only_failures, scenario_name, keyword, page, page_size)", main)
         self.assertIn("store.get_log_html_by_run(run_id)", main)
 
     def test_store_defines_expected_llm_aggregation_functions(self):
@@ -119,6 +121,11 @@ class LlmCallStatsContractTests(unittest.TestCase):
         self.assertIn("GROUP BY agent_role", store)
         self.assertIn("GROUP BY c.run_id", store)
         self.assertIn("ORDER BY created_at DESC", store)
+        self.assertIn("def llm_stats_by_scenario(days, only_failures=False, scenario_name=None, keyword=None, page=1, page_size=20):", store)
+        self.assertIn("SELECT COUNT(*) AS total FROM (", store)
+        self.assertIn("LIMIT %s OFFSET %s", store)
+        self.assertIn('"items": rows', store)
+        self.assertIn('"total": _safe_int(total_row.get("total"))', store)
 
 
 if __name__ == "__main__":

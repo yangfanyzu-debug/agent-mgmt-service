@@ -971,7 +971,7 @@ def llm_stats_by_run(run_id):
     }
 
 
-def llm_stats_by_scenario(days, only_failures=False, scenario_name=None, keyword=None):
+def llm_stats_by_scenario(days, only_failures=False, scenario_name=None, keyword=None, page=1, page_size=20):
     where = ["c.created_at >= DATE_SUB(NOW(), INTERVAL %s DAY)"]
     params = [days]
     if scenario_name:
@@ -983,9 +983,8 @@ def llm_stats_by_scenario(days, only_failures=False, scenario_name=None, keyword
         params.extend([like, like, like])
     having = "HAVING failures > 0" if only_failures else ""
     clause = " WHERE " + " AND ".join(where)
-    with db_cursor() as cursor:
-        cursor.execute(
-            f"""
+    offset = (page - 1) * page_size
+    base_query = f"""
             SELECT c.run_id,
                    COALESCE(MAX(l.scenario_name), MAX(c.scenario_name)) AS scenario_name,
                    COALESCE(MAX(l.extra_data), MAX(c.extra_data)) AS extra_data,
@@ -1006,9 +1005,24 @@ def llm_stats_by_scenario(days, only_failures=False, scenario_name=None, keyword
              {clause}
              GROUP BY c.run_id
              {having}
-             ORDER BY created_at DESC
+    """
+    with db_cursor() as cursor:
+        cursor.execute(
+            f"""
+            SELECT COUNT(*) AS total FROM (
+                {base_query}
+            ) grouped_runs
             """,
             tuple(params),
+        )
+        total_row = cursor.fetchone() or {}
+        cursor.execute(
+            f"""
+            {base_query}
+             ORDER BY created_at DESC
+             LIMIT %s OFFSET %s
+            """,
+            tuple(params + [page_size, offset]),
         )
         rows = _parse_extra_data_rows(cursor.fetchall())
 
@@ -1022,7 +1036,12 @@ def llm_stats_by_scenario(days, only_failures=False, scenario_name=None, keyword
         row["total_latency_ms"] = _safe_int(row.get("total_latency_ms"))
         row["total_input_tokens"] = _safe_int(row.get("total_input_tokens"))
         row["total_output_tokens"] = _safe_int(row.get("total_output_tokens"))
-    return rows
+    return {
+        "total": _safe_int(total_row.get("total")),
+        "page": page,
+        "page_size": page_size,
+        "items": rows,
+    }
 
 
 def list_logs_by_alert_key(alert_key, page, page_size):

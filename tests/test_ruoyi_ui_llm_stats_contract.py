@@ -3,7 +3,11 @@ import unittest
 
 
 ROOT = Path(__file__).resolve().parents[1]
-UI_ROOT = ROOT.parent / "ruoyi-cloud-ops" / "ruoyi-ui"
+UI_ROOT_CANDIDATES = (
+    ROOT.parent / "ruoyi-cloud-ops" / "ruoyi-ui",
+    Path("/opt/ruoyi-cloud-ops/source/ruoyi-ui"),
+)
+UI_ROOT = next((path for path in UI_ROOT_CANDIDATES if path.exists()), UI_ROOT_CANDIDATES[0])
 API_FILE = UI_ROOT / "src" / "api" / "agentMgmt" / "index.js"
 LLM_VIEW = UI_ROOT / "src" / "views" / "agentMgmt" / "llmStats" / "index.vue"
 
@@ -50,6 +54,13 @@ class RuoyiLlmStatsContractTests(unittest.TestCase):
         self.assertIn("el-drawer", source)
         self.assertIn("runIdQuery", source)
         self.assertIn("only_failures", source)
+        self.assertIn("scenarioPage", source)
+        self.assertIn("scenarioPageSize", source)
+        self.assertIn("scenarioTotal", source)
+        self.assertIn("el-pagination", source)
+        self.assertIn(':page-sizes="[20, 50, 100]"', source)
+        self.assertIn(':height="scenarioTableHeight"', source)
+        self.assertIn(':max-height="overallTableHeight"', source)
 
     def test_llm_stats_page_explains_latency_and_uses_wide_drawer(self):
         source = LLM_VIEW.read_text(encoding="utf-8")
