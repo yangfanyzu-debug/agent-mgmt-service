@@ -13,8 +13,16 @@ class AgentCategoryContractTests(unittest.TestCase):
         self.assertIn("`parent_id` int default null", sql)
         self.assertIn("`category_code` varchar(100) not null", sql)
         self.assertIn("unique key uq_agent_category_code", sql)
-        self.assertIn("insert ignore into `agent_mgmt_agent_category`", sql)
+        self.assertIn("insert into `agent_mgmt_agent_category`", sql)
         self.assertIn("'alert_analysis'", sql)
+
+    def test_category_seed_data_updates_existing_labels(self):
+        for migration in ("001_create_agent_mgmt_tables.sql", "004_agent_categories.sql"):
+            sql = (ROOT / "migrations" / migration).read_text(encoding="utf-8").lower()
+            normalized_sql = sql.replace("`", "")
+
+            self.assertIn("on duplicate key update", sql)
+            self.assertIn("category_name=values(category_name)", normalized_sql)
 
     def test_backend_exposes_authenticated_category_tree_api(self):
         main = (ROOT / "app" / "main.py").read_text(encoding="utf-8")

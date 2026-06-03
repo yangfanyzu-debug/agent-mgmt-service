@@ -80,6 +80,44 @@ class ScenarioUpdate(BaseModel):
     related_agents: Optional[Dict[str, Any]] = None
 
 
+class PublicScenarioListIn(BaseModel):
+    pass
+
+
+class PublicScenarioSummary(BaseModel):
+    name: str
+    description: str
+    sub_type_hint: str
+    keyword_hint: str
+
+
+class PublicScenarioListOut(BaseModel):
+    scenarios: List[PublicScenarioSummary]
+    total: int
+
+
+class PublicScenarioDetailIn(BaseModel):
+    name: str
+
+
+class PublicAgentConfig(BaseModel):
+    name: str
+    role: str
+    goal: str
+    backstory: str
+    skills: List[str]
+
+
+class PublicScenarioDetailOut(BaseModel):
+    name: str
+    description: str
+    sub_type_hint: str
+    keyword_hint: str
+    skill_selector_dims: List[str]
+    planner: PublicAgentConfig
+    experts: List[PublicAgentConfig]
+
+
 class ExecutionLogPage(BaseModel):
     total: int
     page: int

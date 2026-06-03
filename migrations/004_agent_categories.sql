@@ -13,7 +13,7 @@ CREATE TABLE IF NOT EXISTS `agent_mgmt_agent_category` (
   KEY ix_agent_category_status (`status`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='Agent management category tree';
 
-INSERT IGNORE INTO `agent_mgmt_agent_category`
+INSERT INTO `agent_mgmt_agent_category`
   (`id`, `parent_id`, `category_code`, `category_name`, `sort_order`, `status`, `created_at`, `updated_at`)
 VALUES
   (1, NULL, 'ops', '运维告警', 10, 'active', NOW(), NOW()),
@@ -25,4 +25,10 @@ VALUES
   (101, 1, 'alert_analysis', '告警分析', 10, 'active', NOW(), NOW()),
   (102, 1, 'notification', '通知', 20, 'active', NOW(), NOW()),
   (201, 2, 'log_processing', '日志处理', 10, 'active', NOW(), NOW()),
-  (202, 2, 'metric_analysis', '指标分析', 20, 'active', NOW(), NOW());
+  (202, 2, 'metric_analysis', '指标分析', 20, 'active', NOW(), NOW())
+ON DUPLICATE KEY UPDATE
+  `parent_id`=VALUES(`parent_id`),
+  `category_name`=VALUES(`category_name`),
+  `sort_order`=VALUES(`sort_order`),
+  `status`=VALUES(`status`),
+  `updated_at`=VALUES(`updated_at`);

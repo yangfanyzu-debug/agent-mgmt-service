@@ -12,6 +12,10 @@ from app.schemas import (
     ExecutionLogPage,
     NameCheckIn,
     NameCheckOut,
+    PublicScenarioDetailIn,
+    PublicScenarioDetailOut,
+    PublicScenarioListIn,
+    PublicScenarioListOut,
     RollbackIn,
     ScenarioCreate,
     ScenarioUpdate,
@@ -111,7 +115,10 @@ def delete_agent(agent_id: int, user: CurrentUser = Depends(get_current_user)):
 
 @app.post("/agents/{agent_id}/activate")
 def activate_agent(agent_id: int, user: CurrentUser = Depends(get_current_user)):
-    row, _ = store.set_agent_status(agent_id, "active", user)
+    try:
+        row, _ = store.set_agent_status(agent_id, "active", user)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
     if not row:
         raise HTTPException(status_code=404, detail="Agent not found")
     return row
@@ -134,7 +141,10 @@ def list_agent_versions(agent_id: int, user: CurrentUser = Depends(get_current_u
 
 @app.post("/agents/{agent_id}/versions/{version_id}/activate")
 def activate_agent_version(agent_id: int, version_id: int, user: CurrentUser = Depends(get_current_user)):
-    result = store.activate_agent_version(agent_id, version_id, user)
+    try:
+        result = store.activate_agent_version(agent_id, version_id, user)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
     if not result:
         raise HTTPException(status_code=404, detail="Agent or version not found")
     return result
@@ -150,7 +160,10 @@ def list_agent_related_scenarios(agent_id: int, user: CurrentUser = Depends(get_
 
 @app.post("/agents/{agent_id}/rollback")
 def rollback_agent(agent_id: int, req: RollbackIn, user: CurrentUser = Depends(get_current_user)):
-    row = store.rollback_agent(agent_id, req.version_id, user)
+    try:
+        row = store.rollback_agent(agent_id, req.version_id, user)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
     if not row:
         raise HTTPException(status_code=404, detail="Agent or version not found")
     return row
@@ -160,6 +173,22 @@ def rollback_agent(agent_id: int, req: RollbackIn, user: CurrentUser = Depends(g
 def check_scenario_name(body: NameCheckIn):
     available = store.check_name(store.SCENARIO_TABLE, "scenario_name", body.name)
     return {"available": available, "message": "名称可用" if available else "名称已存在"}
+
+
+@app.post("/public/scenarios", response_model=PublicScenarioListOut)
+def list_public_scenarios(_: PublicScenarioListIn):
+    return store.list_public_scenarios()
+
+
+@app.post("/public/scenarios/detail", response_model=PublicScenarioDetailOut)
+def get_public_scenario_detail(req: PublicScenarioDetailIn):
+    try:
+        detail = store.get_public_scenario_detail(req.name)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    if not detail:
+        raise HTTPException(status_code=404, detail="Scenario not found")
+    return detail
 
 
 @app.get("/scenarios")
@@ -259,6 +288,46 @@ def list_logs_by_alert_key(
 @app.get("/logs/stats")
 def log_stats(scenario_name: str = None):
     return store.log_stats(scenario_name)
+
+
+@app.get("/llm-stats/summary")
+def llm_stats_summary(days: int = Query(7, ge=1, le=90)):
+    return store.llm_stats_summary(days)
+
+
+@app.get("/llm-stats/failures", response_model=ExecutionLogPage)
+def llm_stats_failures(
+    days: int = Query(7, ge=1, le=90),
+    page: int = Query(1, ge=1),
+    page_size: int = Query(20, ge=1, le=100),
+):
+    return store.llm_stats_failures(days, page, page_size)
+
+
+@app.get("/llm-stats/by-run/{run_id}")
+def llm_stats_by_run(run_id: str):
+    row = store.llm_stats_by_run(run_id)
+    if not row:
+        raise HTTPException(status_code=404, detail="LLM run not found")
+    return row
+
+
+@app.get("/llm-stats/by-scenario")
+def llm_stats_by_scenario(
+    days: int = Query(7, ge=1, le=90),
+    only_failures: bool = False,
+    scenario_name: str = None,
+    keyword: str = None,
+):
+    return store.llm_stats_by_scenario(days, only_failures, scenario_name, keyword)
+
+
+@app.get("/logs/by-run/{run_id}/html", response_class=HTMLResponse)
+def get_log_html_by_run(run_id: str):
+    row = store.get_log_html_by_run(run_id)
+    if not row or not row.get("html_content"):
+        raise HTTPException(status_code=404, detail="HTML report not found")
+    return HTMLResponse(content=row["html_content"])
 
 
 @app.get("/logs/{log_id}/html", response_class=HTMLResponse)

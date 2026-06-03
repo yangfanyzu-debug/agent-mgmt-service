@@ -15,6 +15,7 @@ AGENT_CATEGORY_TABLE = "agent_mgmt_agent_category"
 SCENARIO_TABLE = "agent_mgmt_scenario"
 SCENARIO_VERSION_TABLE = "agent_mgmt_scenario_version"
 LOG_TABLE = "agent_mgmt_execution_log"
+LLM_CALL_LOG_TABLE = "agent_mgmt_llm_call_log"
 
 
 def _now() -> datetime:
@@ -77,6 +78,116 @@ def _normalize_agent_row(row):
     if row.get("active_tags") is None:
         row["active_tags"] = row.get("tags")
     return row
+
+
+def _json_list(value):
+    parsed = _json_loads(value, [])
+    return parsed if isinstance(parsed, list) else []
+
+
+def _json_object(value):
+    parsed = _json_loads(value, {})
+    return parsed if isinstance(parsed, dict) else {}
+
+
+def _safe_int(value, default=0):
+    if value is None:
+        return default
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return default
+
+
+def _safe_float(value, default=0.0):
+    if value is None:
+        return default
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return default
+
+
+def _format_rate(success_count, total_count):
+    total = _safe_int(total_count)
+    if total <= 0:
+        return "0%"
+    return f"{(_safe_float(success_count) / total) * 100:.1f}%"
+
+
+def _normalize_llm_stat(row):
+    calls = _safe_int(row.get("calls"))
+    failures = _safe_int(row.get("failures"))
+    return {
+        "calls": calls,
+        "failures": failures,
+        "success_rate": _format_rate(calls - failures, calls),
+        "avg_latency_ms": _safe_int(row.get("avg_latency_ms")),
+        "total_input_tokens": _safe_int(row.get("total_input_tokens")),
+        "total_output_tokens": _safe_int(row.get("total_output_tokens")),
+    }
+
+
+def _parse_extra_data_rows(rows):
+    for row in rows:
+        row["extra_data"] = _json_object(row.get("extra_data"))
+    return rows
+
+
+def _clean_string(value):
+    return value if isinstance(value, str) else ""
+
+
+def _normalize_skills(value):
+    if not isinstance(value, list):
+        return []
+    return [item for item in value if isinstance(item, str) and item]
+
+
+def _invalid_agent_config(agent_name, reason=None):
+    message = "智能体配置校验失败：{}".format(agent_name)
+    return "{}；{}".format(message, reason) if reason else message
+
+
+def validate_agent_yaml_content(agent_name, content):
+    if not content:
+        raise ValueError(_invalid_agent_config(agent_name, "配置内容不能为空"))
+    try:
+        parsed = yaml.safe_load(content) or {}
+    except yaml.YAMLError as exc:
+        raise ValueError(_invalid_agent_config(agent_name, "配置内容无法解析，请检查格式")) from exc
+    if not isinstance(parsed, dict):
+        raise ValueError(_invalid_agent_config(agent_name, "配置顶层必须是对象"))
+
+    yaml_name = parsed.get("name")
+    if yaml_name and yaml_name != agent_name:
+        raise ValueError(_invalid_agent_config(agent_name, "配置中的 name 必须与智能体名称一致"))
+
+    if not isinstance(parsed.get("role"), str) or not parsed.get("role").strip():
+        raise ValueError(_invalid_agent_config(agent_name, "配置字段 role 必填"))
+    if not isinstance(parsed.get("goal"), str) or not parsed.get("goal").strip():
+        raise ValueError(_invalid_agent_config(agent_name, "配置字段 goal 必填"))
+
+    skills = parsed.get("skills")
+    if not isinstance(skills, list) or any(not isinstance(item, str) or not item.strip() for item in skills):
+        raise ValueError(_invalid_agent_config(agent_name, "配置字段 skills 必须是字符串数组"))
+
+    for field in ("backstory", "backstory_extra"):
+        if field in parsed and parsed.get(field) is not None and not isinstance(parsed.get(field), str):
+            raise ValueError(_invalid_agent_config(agent_name, "配置字段 {} 必须是字符串".format(field)))
+
+    return parsed
+
+
+def _parse_public_agent_config(agent):
+    parsed = validate_agent_yaml_content(agent.get("agent_name"), agent.get("active_content") or agent.get("content"))
+    return {
+        "name": agent.get("agent_name") or "",
+        "role": _clean_string(parsed.get("role")),
+        "goal": _clean_string(parsed.get("goal")),
+        "backstory": _clean_string(parsed.get("backstory") or parsed.get("backstory_extra")),
+        "skills": _normalize_skills(parsed.get("skills")),
+    }
 
 
 def _agent_scenario_relations(cursor, agent_name):
@@ -210,6 +321,7 @@ def get_agent(agent_id, user):
 
 def create_agent(req, user):
     now = _now()
+    validate_agent_yaml_content(req.agent_name, req.content)
     with db_cursor(commit=True) as cursor:
         _ensure_category_exists(cursor, req.tags)
         cursor.execute(
@@ -265,6 +377,7 @@ def update_agent(agent_id, req, user):
         if not row:
             return None
         ensure_can_edit(row, user.user_id)
+        validate_agent_yaml_content(row["agent_name"], req.content)
         tags = req.tags if req.tags is not None else row.get("tags")
         _ensure_category_exists(cursor, tags)
         next_version = _next_version(row["version"])
@@ -305,6 +418,8 @@ def set_agent_status(agent_id, status, user):
                     blocked.append(scenario["scenario_name"])
             if blocked:
                 return row, blocked
+        if status == "active":
+            validate_agent_yaml_content(row["agent_name"], row.get("active_content") or row.get("content"))
         cursor.execute(
             f"""
             UPDATE {AGENT_TABLE}
@@ -351,6 +466,7 @@ def activate_agent_version(agent_id, version_id, user):
         if not row or not version:
             return None
         ensure_can_edit(row, user.user_id)
+        validate_agent_yaml_content(row["agent_name"], version["content"])
         affected_scenarios = _agent_scenario_relations(cursor, row["agent_name"])
         cursor.execute(f"UPDATE {AGENT_VERSION_TABLE} SET is_active=0 WHERE agent_id=%s", (agent_id,))
         cursor.execute(
@@ -370,6 +486,7 @@ def activate_agent_version(agent_id, version_id, user):
                SET active_version=%s,
                    active_content=%s,
                    active_tags=%s,
+                   status=%s,
                    updated_by_user_id=%s,
                    updated_by_username=%s,
                    updated_at=%s
@@ -379,6 +496,7 @@ def activate_agent_version(agent_id, version_id, user):
                 version["version"],
                 version["content"],
                 version.get("tags"),
+                "active",
                 user.user_id,
                 user.username,
                 now,
@@ -396,6 +514,7 @@ def rollback_agent(agent_id, version_id, user):
         if not row or not version:
             return None
         ensure_can_edit(row, user.user_id)
+        validate_agent_yaml_content(row["agent_name"], version["content"])
         cursor.execute(
             f"INSERT INTO {AGENT_VERSION_TABLE} (agent_id,version,content,tags,created_by_user_id,created_by_username,created_at,is_active) VALUES (%s,%s,%s,%s,%s,%s,%s,0)",
             (agent_id, row["version"], row["content"], row.get("tags"), user.user_id, user.username, now),
@@ -405,6 +524,75 @@ def rollback_agent(agent_id, version_id, user):
             (version["content"], version.get("tags"), _next_version(row["version"]), user.user_id, user.username, now, agent_id),
         )
     return get_agent(agent_id, user)
+
+
+def list_public_scenarios():
+    with db_cursor() as cursor:
+        cursor.execute(
+            f"""
+            SELECT scenario_name,description,sub_type_hint,keyword_hint
+              FROM {SCENARIO_TABLE}
+             WHERE status='active'
+             ORDER BY updated_at DESC
+            """
+        )
+        rows = cursor.fetchall()
+    scenarios = []
+    for row in rows:
+        scenarios.append({
+            "name": row["scenario_name"],
+            "description": row.get("description") or "",
+            "sub_type_hint": row.get("sub_type_hint") or "",
+            "keyword_hint": row.get("keyword_hint") or "",
+        })
+    return {"scenarios": scenarios, "total": len(scenarios)}
+
+
+def get_public_scenario_detail(name):
+    with db_cursor() as cursor:
+        scenario = _select_one(
+            cursor,
+            f"SELECT * FROM {SCENARIO_TABLE} WHERE scenario_name=%s AND status='active'",
+            (name,),
+        )
+        if not scenario:
+            return None
+        related = _json_object(scenario.get("related_agents"))
+        planner_name = related.get("planner")
+        if not planner_name:
+            raise ValueError("Scenario planner is required")
+        related_experts = related.get("experts") if isinstance(related.get("experts"), list) else []
+        expert_names = [
+            item.get("name")
+            for item in related_experts
+            if isinstance(item, dict) and item.get("enabled", True) and item.get("name")
+        ]
+        names = [planner_name] + expert_names
+        placeholders = ",".join(["%s"] * len(names))
+        cursor.execute(
+            f"SELECT * FROM {AGENT_TABLE} WHERE agent_name IN ({placeholders})",
+            tuple(names),
+        )
+        agents = cursor.fetchall()
+
+    agent_by_name = {agent["agent_name"]: _normalize_agent_row(agent) for agent in agents}
+    missing_or_inactive = [
+        agent_name
+        for agent_name in names
+        if agent_name not in agent_by_name or agent_by_name[agent_name].get("status") != "active"
+    ]
+    if missing_or_inactive:
+        raise ValueError("Scenario agents are not active: {}".format(", ".join(missing_or_inactive)))
+
+    return {
+        "name": scenario["scenario_name"],
+        "description": scenario.get("description") or "",
+        "sub_type_hint": scenario.get("sub_type_hint") or "",
+        "keyword_hint": scenario.get("keyword_hint") or "",
+        "skill_selector_dims": _json_list(scenario.get("skill_selector_dims")),
+        "planner": _parse_public_agent_config(agent_by_name[planner_name]),
+        "experts": [_parse_public_agent_config(agent_by_name[expert_name]) for expert_name in expert_names],
+    }
 
 
 def list_scenarios(user, scope, status):
@@ -654,11 +842,187 @@ def list_logs(scenario_name, system_id, alert_key, page, page_size):
         cursor.execute(f"SELECT COUNT(*) AS total FROM {LOG_TABLE}{clause}", tuple(params))
         total = cursor.fetchone()["total"]
         cursor.execute(
-            f"SELECT id,scenario_id,scenario_name,log_name,extra_data,remark,created_at FROM {LOG_TABLE}{clause} ORDER BY created_at DESC LIMIT %s OFFSET %s",
+            f"SELECT id,run_id,scenario_id,scenario_name,log_name,extra_data,remark,created_at FROM {LOG_TABLE}{clause} ORDER BY created_at DESC LIMIT %s OFFSET %s",
             tuple(params + [page_size, offset]),
         )
         items = cursor.fetchall()
     return {"total": total, "page": page, "page_size": page_size, "items": items}
+
+
+def llm_stats_summary(days):
+    params = [days]
+    where = "WHERE created_at >= DATE_SUB(NOW(), INTERVAL %s DAY)"
+    with db_cursor() as cursor:
+        cursor.execute(
+            f"""
+            SELECT COUNT(*) AS total_calls,
+                   SUM(status='failed') AS total_failures,
+                   AVG(latency_ms) AS avg_latency_ms,
+                   SUM(input_tokens) AS total_input_tokens,
+                   SUM(output_tokens) AS total_output_tokens
+              FROM {LLM_CALL_LOG_TABLE}
+             {where}
+            """,
+            tuple(params),
+        )
+        total_row = cursor.fetchone() or {}
+
+        cursor.execute(
+            f"""
+            SELECT model AS name,
+                   COUNT(*) AS calls,
+                   SUM(status='failed') AS failures,
+                   AVG(latency_ms) AS avg_latency_ms,
+                   SUM(input_tokens) AS total_input_tokens,
+                   SUM(output_tokens) AS total_output_tokens
+              FROM {LLM_CALL_LOG_TABLE}
+             {where}
+             GROUP BY model
+             ORDER BY calls DESC, model ASC
+            """,
+            tuple(params),
+        )
+        by_model_rows = cursor.fetchall()
+
+        cursor.execute(
+            f"""
+            SELECT agent_role AS name,
+                   COUNT(*) AS calls,
+                   SUM(status='failed') AS failures,
+                   AVG(latency_ms) AS avg_latency_ms,
+                   SUM(input_tokens) AS total_input_tokens,
+                   SUM(output_tokens) AS total_output_tokens
+              FROM {LLM_CALL_LOG_TABLE}
+             {where}
+             GROUP BY agent_role
+             ORDER BY calls DESC, agent_role ASC
+            """,
+            tuple(params),
+        )
+        by_role_rows = cursor.fetchall()
+
+    total_calls = _safe_int(total_row.get("total_calls"))
+    total_failures = _safe_int(total_row.get("total_failures"))
+    return {
+        "total_calls": total_calls,
+        "total_failures": total_failures,
+        "success_rate": _format_rate(total_calls - total_failures, total_calls),
+        "avg_latency_ms": _safe_int(total_row.get("avg_latency_ms")),
+        "total_input_tokens": _safe_int(total_row.get("total_input_tokens")),
+        "total_output_tokens": _safe_int(total_row.get("total_output_tokens")),
+        "by_model": {row["name"] or "unknown": _normalize_llm_stat(row) for row in by_model_rows},
+        "by_role": {row["name"] or "unknown": _normalize_llm_stat(row) for row in by_role_rows},
+    }
+
+
+def llm_stats_failures(days, page, page_size):
+    offset = (page - 1) * page_size
+    params = [days]
+    where = "WHERE status='failed' AND created_at >= DATE_SUB(NOW(), INTERVAL %s DAY)"
+    with db_cursor() as cursor:
+        cursor.execute(f"SELECT COUNT(*) AS total FROM {LLM_CALL_LOG_TABLE} {where}", tuple(params))
+        total = cursor.fetchone()["total"]
+        cursor.execute(
+            f"""
+            SELECT id,run_id,scenario_name,agent_role,call_index,model,status,latency_ms,
+                   retry_count,error_type,error_msg,input_tokens,output_tokens,extra_data,created_at
+              FROM {LLM_CALL_LOG_TABLE}
+             {where}
+             ORDER BY created_at DESC
+             LIMIT %s OFFSET %s
+            """,
+            tuple(params + [page_size, offset]),
+        )
+        items = _parse_extra_data_rows(cursor.fetchall())
+    return {"total": total, "page": page, "page_size": page_size, "items": items}
+
+
+def llm_stats_by_run(run_id):
+    with db_cursor() as cursor:
+        cursor.execute(
+            f"""
+            SELECT id,run_id,scenario_name,agent_role,call_index,model,status,latency_ms,
+                   retry_count,error_type,error_msg,input_tokens,output_tokens,extra_data,created_at
+              FROM {LLM_CALL_LOG_TABLE}
+             WHERE run_id=%s
+             ORDER BY call_index ASC, created_at ASC
+            """,
+            (run_id,),
+        )
+        calls = _parse_extra_data_rows(cursor.fetchall())
+    if not calls:
+        return None
+    total_calls = len(calls)
+    total_failures = sum(1 for call in calls if call.get("status") == "failed")
+    latencies = [_safe_int(call.get("latency_ms")) for call in calls if call.get("latency_ms") is not None]
+    total_latency = sum(latencies)
+    return {
+        "run_id": run_id,
+        "scenario_name": calls[0].get("scenario_name") or "unknown",
+        "total_calls": total_calls,
+        "total_failures": total_failures,
+        "success_rate": _format_rate(total_calls - total_failures, total_calls),
+        "avg_latency_ms": int(total_latency / len(latencies)) if latencies else 0,
+        "total_latency_ms": total_latency,
+        "total_input_tokens": sum(_safe_int(call.get("input_tokens")) for call in calls),
+        "total_output_tokens": sum(_safe_int(call.get("output_tokens")) for call in calls),
+        "extra_data": calls[0].get("extra_data") or {},
+        "calls": calls,
+    }
+
+
+def llm_stats_by_scenario(days, only_failures=False, scenario_name=None, keyword=None):
+    where = ["c.created_at >= DATE_SUB(NOW(), INTERVAL %s DAY)"]
+    params = [days]
+    if scenario_name:
+        where.append("c.scenario_name=%s")
+        params.append(scenario_name)
+    if keyword:
+        like = f"%{keyword}%"
+        where.append("(c.run_id LIKE %s OR c.extra_data LIKE %s OR l.extra_data LIKE %s)")
+        params.extend([like, like, like])
+    having = "HAVING failures > 0" if only_failures else ""
+    clause = " WHERE " + " AND ".join(where)
+    with db_cursor() as cursor:
+        cursor.execute(
+            f"""
+            SELECT c.run_id,
+                   COALESCE(MAX(l.scenario_name), MAX(c.scenario_name)) AS scenario_name,
+                   COALESCE(MAX(l.extra_data), MAX(c.extra_data)) AS extra_data,
+                   MIN(c.created_at) AS created_at,
+                   COUNT(*) AS total_calls,
+                   SUM(c.status='failed') AS failures,
+                   AVG(c.latency_ms) AS avg_latency_ms,
+                   SUM(c.latency_ms) AS total_latency_ms,
+                   SUM(c.input_tokens) AS total_input_tokens,
+                   SUM(c.output_tokens) AS total_output_tokens
+              FROM {LLM_CALL_LOG_TABLE} c
+              LEFT JOIN (
+                SELECT run_id, MAX(scenario_name) AS scenario_name, MAX(extra_data) AS extra_data
+                  FROM {LOG_TABLE}
+                 WHERE run_id IS NOT NULL
+                 GROUP BY run_id
+              ) l ON l.run_id = c.run_id
+             {clause}
+             GROUP BY c.run_id
+             {having}
+             ORDER BY created_at DESC
+            """,
+            tuple(params),
+        )
+        rows = _parse_extra_data_rows(cursor.fetchall())
+
+    for row in rows:
+        total_calls = _safe_int(row.get("total_calls"))
+        failures = _safe_int(row.get("failures"))
+        row["total_calls"] = total_calls
+        row["failures"] = failures
+        row["success_rate"] = _format_rate(total_calls - failures, total_calls)
+        row["avg_latency_ms"] = _safe_int(row.get("avg_latency_ms"))
+        row["total_latency_ms"] = _safe_int(row.get("total_latency_ms"))
+        row["total_input_tokens"] = _safe_int(row.get("total_input_tokens"))
+        row["total_output_tokens"] = _safe_int(row.get("total_output_tokens"))
+    return rows
 
 
 def list_logs_by_alert_key(alert_key, page, page_size):
@@ -711,3 +1075,18 @@ def log_stats(scenario_name):
 def get_log_html(log_id):
     with db_cursor() as cursor:
         return _select_one(cursor, f"SELECT html_content FROM {LOG_TABLE} WHERE id=%s", (log_id,))
+
+
+def get_log_html_by_run(run_id):
+    with db_cursor() as cursor:
+        return _select_one(
+            cursor,
+            f"""
+            SELECT html_content
+              FROM {LOG_TABLE}
+             WHERE run_id=%s
+             ORDER BY created_at DESC
+             LIMIT 1
+            """,
+            (run_id,),
+        )

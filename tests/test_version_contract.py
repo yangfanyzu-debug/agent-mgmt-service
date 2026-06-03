@@ -30,10 +30,14 @@ class VersionContractTests(unittest.TestCase):
             self.assertIn(f"`{column}`", agent_block.group(1))
             self.assertIn(column, db)
 
-        self.assertIn("def activate_agent_version(agent_id, version_id, user):", store)
-        self.assertIn("active_version=%s", store)
-        self.assertIn("set is_active=0 where agent_id=%s", store)
-        self.assertIn("affected_scenarios", store)
+        activate_block = re.search(r"def activate_agent_version\(agent_id, version_id, user\):(.*?)def rollback_agent", store, re.S)
+        self.assertIsNotNone(activate_block)
+        activate_source = activate_block.group(1)
+        self.assertIn("active_version=%s", activate_source)
+        self.assertIn("status=%s", activate_source)
+        self.assertIn('"active"', activate_source)
+        self.assertIn("set is_active=0 where agent_id=%s", activate_source)
+        self.assertIn("affected_scenarios", activate_source)
 
     def test_scenario_versions_snapshot_mutable_fields_for_full_rollback(self):
         sql = (ROOT / "migrations" / "001_create_agent_mgmt_tables.sql").read_text(encoding="utf-8").lower()
