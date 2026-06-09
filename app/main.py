@@ -270,10 +270,11 @@ def list_logs(
     scenario_name: str = None,
     system_id: str = None,
     alert_key: str = None,
+    alert_source: str = None,
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
 ):
-    return store.list_logs(scenario_name, system_id, alert_key, page, page_size)
+    return store.list_logs(scenario_name, system_id, alert_key, alert_source, page, page_size)
 
 
 @app.get("/logs/by-alert-key", response_model=ExecutionLogPage)
@@ -300,8 +301,11 @@ def llm_stats_failures(
     days: int = Query(7, ge=1, le=90),
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
+    scenario_name: str = None,
+    error_type: str = None,
+    keyword: str = None,
 ):
-    return store.llm_stats_failures(days, page, page_size)
+    return store.llm_stats_failures(days, page, page_size, scenario_name, error_type, keyword)
 
 
 @app.get("/llm-stats/by-run/{run_id}")
@@ -318,10 +322,11 @@ def llm_stats_by_scenario(
     only_failures: bool = False,
     scenario_name: str = None,
     keyword: str = None,
+    run_id: str = None,
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
 ):
-    return store.llm_stats_by_scenario(days, only_failures, scenario_name, keyword, page, page_size)
+    return store.llm_stats_by_scenario(days, only_failures, scenario_name, keyword, run_id, page, page_size)
 
 
 @app.get("/logs/by-run/{run_id}/html", response_class=HTMLResponse)

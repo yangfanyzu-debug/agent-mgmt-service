@@ -28,7 +28,7 @@ def _next_version(current: str) -> str:
         prefix = current[1:].split(".", 1)[0]
         if prefix.isdigit():
             major = int(prefix) + 1
-    return f"v{major}.{datetime.now().strftime('%Y%m%d%H%M%S')}"
+    return f"v{major}"
 
 
 def _json_text(value: Any) -> str:
@@ -71,12 +71,13 @@ def _select_one(cursor, sql, params=()):
 def _normalize_agent_row(row):
     if not row:
         return row
-    if not row.get("active_version"):
-        row["active_version"] = row.get("version")
-    if row.get("active_content") is None:
-        row["active_content"] = row.get("content")
-    if row.get("active_tags") is None:
-        row["active_tags"] = row.get("tags")
+    if row.get("status") == "active":
+        if not row.get("active_version"):
+            row["active_version"] = row.get("version")
+        if row.get("active_content") is None:
+            row["active_content"] = row.get("content")
+        if row.get("active_tags") is None:
+            row["active_tags"] = row.get("tags")
     return row
 
 
@@ -180,7 +181,8 @@ def validate_agent_yaml_content(agent_name, content):
 
 
 def _parse_public_agent_config(agent):
-    parsed = validate_agent_yaml_content(agent.get("agent_name"), agent.get("active_content") or agent.get("content"))
+    runtime_content = agent.get("active_content")
+    parsed = validate_agent_yaml_content(agent.get("agent_name"), runtime_content)
     return {
         "name": agent.get("agent_name") or "",
         "role": _clean_string(parsed.get("role")),
@@ -330,13 +332,11 @@ def create_agent(req, user):
               (agent_name, type, content, status, tags, version, active_version, active_content, active_tags,
                created_by_user_id, created_by_username, updated_by_user_id, updated_by_username,
                created_at, updated_at)
-            VALUES (%s,%s,%s,'draft',%s,'v1','v1',%s,%s,%s,%s,%s,%s,%s,%s)
+            VALUES (%s,%s,%s,'draft',%s,'v1',NULL,NULL,NULL,%s,%s,%s,%s,%s,%s)
             """,
             (
                 req.agent_name,
                 req.type,
-                req.content,
-                req.tags,
                 req.content,
                 req.tags,
                 user.user_id,
@@ -352,16 +352,13 @@ def create_agent(req, user):
             f"""
             INSERT INTO {AGENT_VERSION_TABLE}
               (agent_id, version, content, tags, created_by_user_id, created_by_username,
-               created_at, is_active, activated_by_user_id, activated_by_username, activated_at)
-            VALUES (%s,'v1',%s,%s,%s,%s,%s,1,%s,%s,%s)
+               created_at, is_active)
+            VALUES (%s,'v1',%s,%s,%s,%s,%s,0)
             """,
             (
                 new_id,
                 req.content,
                 req.tags,
-                user.user_id,
-                user.username,
-                now,
                 user.user_id,
                 user.username,
                 now,
@@ -824,9 +821,10 @@ def rollback_scenario(scenario_id, version_id, user):
     return get_scenario(scenario_id, user)
 
 
-def list_logs(scenario_name, system_id, alert_key, page, page_size):
+def list_logs(scenario_name, system_id, alert_key, alert_source, page, page_size):
     where = []
     params = []
+    alert_source_expr = "CASE WHEN JSON_VALID(extra_data) THEN JSON_UNQUOTE(JSON_EXTRACT(extra_data, '$.alert_source')) ELSE NULL END"
     if scenario_name:
         where.append("scenario_name=%s")
         params.append(scenario_name)
@@ -836,6 +834,9 @@ def list_logs(scenario_name, system_id, alert_key, page, page_size):
     if alert_key:
         where.append("extra_data LIKE %s")
         params.append(f"%{alert_key}%")
+    if alert_source:
+        where.append(f"{alert_source_expr}=%s")
+        params.append(alert_source)
     clause = " WHERE " + " AND ".join(where) if where else ""
     offset = (page - 1) * page_size
     with db_cursor() as cursor:
@@ -915,19 +916,30 @@ def llm_stats_summary(days):
     }
 
 
-def llm_stats_failures(days, page, page_size):
+def llm_stats_failures(days, page, page_size, scenario_name=None, error_type=None, keyword=None):
     offset = (page - 1) * page_size
     params = [days]
-    where = "WHERE status='failed' AND created_at >= DATE_SUB(NOW(), INTERVAL %s DAY)"
+    where = ["status='failed'", "created_at >= DATE_SUB(NOW(), INTERVAL %s DAY)"]
+    if scenario_name:
+        where.append("scenario_name=%s")
+        params.append(scenario_name)
+    if error_type:
+        where.append("error_type=%s")
+        params.append(error_type)
+    if keyword:
+        like = f"%{keyword}%"
+        where.append("(run_id LIKE %s OR agent_role LIKE %s OR model LIKE %s OR error_msg LIKE %s)")
+        params.extend([like, like, like, like])
+    clause = "WHERE " + " AND ".join(where)
     with db_cursor() as cursor:
-        cursor.execute(f"SELECT COUNT(*) AS total FROM {LLM_CALL_LOG_TABLE} {where}", tuple(params))
+        cursor.execute(f"SELECT COUNT(*) AS total FROM {LLM_CALL_LOG_TABLE} {clause}", tuple(params))
         total = cursor.fetchone()["total"]
         cursor.execute(
             f"""
             SELECT id,run_id,scenario_name,agent_role,call_index,model,status,latency_ms,
                    retry_count,error_type,error_msg,input_tokens,output_tokens,extra_data,created_at
               FROM {LLM_CALL_LOG_TABLE}
-             {where}
+             {clause}
              ORDER BY created_at DESC
              LIMIT %s OFFSET %s
             """,
@@ -971,12 +983,15 @@ def llm_stats_by_run(run_id):
     }
 
 
-def llm_stats_by_scenario(days, only_failures=False, scenario_name=None, keyword=None, page=1, page_size=20):
+def llm_stats_by_scenario(days, only_failures=False, scenario_name=None, keyword=None, run_id=None, page=1, page_size=20):
     where = ["c.created_at >= DATE_SUB(NOW(), INTERVAL %s DAY)"]
     params = [days]
     if scenario_name:
         where.append("c.scenario_name=%s")
         params.append(scenario_name)
+    if run_id:
+        where.append("c.run_id=%s")
+        params.append(run_id)
     if keyword:
         like = f"%{keyword}%"
         where.append("(c.run_id LIKE %s OR c.extra_data LIKE %s OR l.extra_data LIKE %s)")

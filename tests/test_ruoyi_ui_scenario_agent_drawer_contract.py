@@ -54,6 +54,23 @@ class RuoyiScenarioAgentDrawerContractTests(unittest.TestCase):
         self.assertNotIn("'backstory: >'", source)
         self.assertIn("标准格式：顶层包含 name、role、goal、backstory、skills", source)
 
+    def test_quick_create_agent_normalizes_and_validates_pasted_yaml_before_save(self):
+        source = SCENARIOS_VIEW.read_text(encoding="utf-8")
+
+        self.assertIn("normalizeDrawerAgentYaml(content)", source)
+        self.assertIn("readDrawerYamlField(raw, key)", source)
+        self.assertIn("readDrawerIndentedYamlBlock(lines, startIndex)", source)
+        self.assertIn("｜", source)
+        self.assertIn("['>', '|', '｜', '&gt;', '&vert;']", source)
+        self.assertIn("normalizedContent = this.normalizeDrawerAgentYaml(this.drawerForm.content)", source)
+        self.assertIn("content: normalizedContent", source)
+        self.assertIn("this.drawerForm.content = normalizedContent", source)
+        self.assertIn("Agent 配置 YAML 中 goal 不能为空", source)
+        self.assertIn("Agent 配置 YAML 中 role 不能为空", source)
+        self.assertIn("Agent 配置 YAML 中 skills 必须是 YAML 数组", source)
+        self.assertIn("goal: |", source)
+        self.assertIn("backstory: |", source)
+
 
 if __name__ == "__main__":
     unittest.main()

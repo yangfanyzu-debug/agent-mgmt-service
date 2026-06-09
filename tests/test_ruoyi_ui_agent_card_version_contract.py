@@ -4,7 +4,11 @@ import unittest
 
 
 ROOT = Path(__file__).resolve().parents[1]
-UI_ROOT = ROOT.parent / "ruoyi-cloud-ops" / "ruoyi-ui"
+UI_ROOT_CANDIDATES = (
+    ROOT.parent / "ruoyi-cloud-ops" / "ruoyi-ui",
+    Path("/opt/ruoyi-cloud-ops/source/ruoyi-ui"),
+)
+UI_ROOT = next((path for path in UI_ROOT_CANDIDATES if path.exists()), UI_ROOT_CANDIDATES[0])
 AGENTS_VIEW = UI_ROOT / "src" / "views" / "agentMgmt" / "agents" / "index.vue"
 
 
@@ -18,6 +22,15 @@ class RuoyiAgentCardVersionContractTests(unittest.TestCase):
         self.assertIn("@click=\"activateVersion(version)\"", source)
         self.assertIn("activateAgentVersion", source)
         self.assertIn("激活此版本", source)
+        self.assertNotIn("设为生效", source)
+        self.assertIn("pendingVersion(row)", source)
+        self.assertIn("displayVersion(version.version)", source)
+        self.assertIn("<span>激活版本</span>", source)
+        self.assertIn("<span>待激活版本</span>", source)
+        self.assertIn("{{ pendingVersion(row) }}", source)
+        self.assertNotIn("<span>最新版本</span>", source)
+        self.assertNotIn("生效版本", source)
+        self.assertNotIn("待生效版本", source)
         self.assertIn("isVersionActivationDisabled(version)", source)
         self.assertIn("versionTarget.status === 'active'", source)
         self.assertIn("versionTarget.status === 'inactive'", source)
@@ -63,6 +76,27 @@ class RuoyiAgentCardVersionContractTests(unittest.TestCase):
         self.assertIn("@click=\"activateVersion(version)\"", version_dialog.group(0))
         self.assertIn(':disabled="isVersionActivationDisabled(version)"', version_dialog.group(0))
         self.assertNotIn(':disabled="isVersionActive(version)', version_dialog.group(0))
+
+    def test_agent_card_status_text_avoids_activation_wording(self):
+        source = AGENTS_VIEW.read_text(encoding="utf-8")
+
+        self.assertIn("statusText(status)", source)
+        self.assertIn("active: '可用'", source)
+        self.assertNotIn("active: '已激活'", source)
+        self.assertIn("this.$message.success(`Agent 已激活版本 ${version.version}`)", source)
+        self.assertNotIn("生效", source)
+
+    def test_agent_yaml_parser_accepts_indented_multiline_goal_and_backstory(self):
+        source = AGENTS_VIEW.read_text(encoding="utf-8")
+
+        self.assertIn("readYamlField(raw, key)", source)
+        self.assertIn("readIndentedYamlBlock(lines, startIndex)", source)
+        self.assertIn("goal: this.readYamlField(raw, 'goal')", source)
+        self.assertIn("backstory: this.readYamlField(raw, 'backstory')", source)
+        self.assertIn("line.match(/^([A-Za-z_][A-Za-z0-9_-]*):/", source)
+        self.assertIn("return this.cleanYamlFieldValue(block.lines.join('\\n'))", source)
+        self.assertIn("｜", source)
+        self.assertIn("['>', '|', '｜', '&gt;', '&vert;']", source)
 
 
 if __name__ == "__main__":

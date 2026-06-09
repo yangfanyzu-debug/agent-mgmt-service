@@ -39,6 +39,31 @@ class VersionContractTests(unittest.TestCase):
         self.assertIn("set is_active=0 where agent_id=%s", activate_source)
         self.assertIn("affected_scenarios", activate_source)
 
+    def test_created_agent_starts_as_unactivated_draft(self):
+        store = (ROOT / "app" / "services" / "store.py").read_text(encoding="utf-8")
+
+        create_block = re.search(r"def create_agent\(req, user\):(.*?)def update_agent", store, re.S)
+        self.assertIsNotNone(create_block)
+        create_source = create_block.group(1)
+        self.assertIn("(agent_name, type, content, status, tags, version, active_version, active_content, active_tags,", create_source)
+        self.assertIn("VALUES (%s,%s,%s,'draft',%s,'v1',NULL,NULL,NULL", create_source)
+        self.assertIn("created_at, is_active)", create_source)
+        self.assertIn("VALUES (%s,'v1',%s,%s,%s,%s,%s,0)", create_source)
+        self.assertNotIn("activated_by_user_id, activated_by_username, activated_at", create_source)
+
+        normalize_block = re.search(r"def _normalize_agent_row\(row\):(.*?)def _json_list", store, re.S)
+        self.assertIsNotNone(normalize_block)
+        normalize_source = normalize_block.group(1)
+        self.assertIn('if row.get("status") == "active":', normalize_source)
+        self.assertIn('row["active_version"] = row.get("version")', normalize_source)
+
+    def test_new_versions_use_simple_incremental_names(self):
+        store = (ROOT / "app" / "services" / "store.py").read_text(encoding="utf-8")
+
+        self.assertIn('return f"v{major}"', store)
+        self.assertNotIn("strftime('%Y%m%d%H%M%S')", store)
+        self.assertNotIn('strftime("%Y%m%d%H%M%S")', store)
+
     def test_scenario_versions_snapshot_mutable_fields_for_full_rollback(self):
         sql = (ROOT / "migrations" / "001_create_agent_mgmt_tables.sql").read_text(encoding="utf-8").lower()
         store = (ROOT / "app" / "services" / "store.py").read_text(encoding="utf-8").lower()
