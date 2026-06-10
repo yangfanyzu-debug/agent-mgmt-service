@@ -1124,3 +1124,18 @@ def get_log_html_by_run(run_id):
             """,
             (run_id,),
         )
+
+
+def get_log_for_public_viewer(run_id):
+    with db_cursor() as cursor:
+        return _select_one(
+            cursor,
+            f"""
+            SELECT html_content, scenario_name, log_name, created_at
+              FROM {LOG_TABLE}
+             WHERE run_id=%s
+             ORDER BY created_at DESC
+             LIMIT 1
+            """,
+            (run_id,),
+        )

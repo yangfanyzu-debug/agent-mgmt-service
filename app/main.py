@@ -343,3 +343,11 @@ def get_log_html(log_id: int):
     if not row or not row.get("html_content"):
         raise HTTPException(status_code=404, detail="HTML report not found")
     return HTMLResponse(content=row["html_content"])
+
+
+@app.get("/public/log-viewer", response_class=HTMLResponse)
+def public_log_viewer(run_id: str = Query(..., min_length=1)):
+    row = store.get_log_html_by_run(run_id)
+    if not row or not row.get("html_content"):
+        raise HTTPException(status_code=404, detail="Log not found")
+    return HTMLResponse(content=row["html_content"])
