@@ -74,12 +74,33 @@ def _run_migration(cursor, filename):
     if cursor.fetchone():
         return
 
+    if _migration_already_applied(cursor, filename):
+        _mark_migration_executed(cursor, filename)
+        return
+
     migration = Path(__file__).resolve().parents[2] / "migrations" / filename
     statements = [part.strip() for part in migration.read_text(encoding="utf-8-sig").split(";") if part.strip()]
     for statement in statements:
         cursor.execute(statement)
+    _mark_migration_executed(cursor, filename)
+
+
+def _migration_already_applied(cursor, filename):
+    marker_tables = {
+        "001_create_agent_mgmt_tables.sql": "agent_mgmt_agent",
+        "008_panorama_tables.sql": "agent_mgmt_panorama_layer",
+    }
+    table = marker_tables.get(filename)
+    if not table:
+        return False
+
+    cursor.execute("SHOW TABLES LIKE %s", (table,))
+    return cursor.fetchone() is not None
+
+
+def _mark_migration_executed(cursor, filename):
     cursor.execute(
-        "INSERT INTO `agent_mgmt_schema_migration` (`filename`, `executed_at`) VALUES (%s, NOW())",
+        "INSERT IGNORE INTO `agent_mgmt_schema_migration` (`filename`, `executed_at`) VALUES (%s, NOW())",
         (filename,),
     )
 
