@@ -12,6 +12,17 @@ from app.schemas import (
     ExecutionLogPage,
     NameCheckIn,
     NameCheckOut,
+    PanoramaAgentSlotCreate,
+    PanoramaAgentSlotUpdate,
+    PanoramaLayerCreate,
+    PanoramaLayerUpdate,
+    PanoramaNodeCreate,
+    PanoramaNodeTagAssign,
+    PanoramaNodeUpdate,
+    PanoramaScenarioSlotCreate,
+    PanoramaScenarioSlotUpdate,
+    PanoramaTagCreate,
+    PanoramaTagUpdate,
     PublicScenarioDetailIn,
     PublicScenarioDetailOut,
     PublicScenarioListIn,
@@ -20,6 +31,7 @@ from app.schemas import (
     ScenarioCreate,
     ScenarioUpdate,
 )
+from app.services import panorama_store
 from app.services import store
 from app.services.permissions import OwnershipError
 
@@ -50,6 +62,149 @@ def _duplicate_error(exc: IntegrityError):
 @app.get("/health")
 def health():
     return {"status": "ok", "service": "agent-mgmt-service"}
+
+
+@app.get("/panorama/tree")
+def panorama_tree(user: CurrentUser = Depends(get_current_user)):
+    return {"tree": panorama_store.get_tree()}
+
+
+@app.get("/panorama/stats")
+def panorama_stats(user: CurrentUser = Depends(get_current_user)):
+    return panorama_store.get_stats()
+
+
+@app.get("/panorama/layers")
+def panorama_layers(user: CurrentUser = Depends(get_current_user)):
+    return panorama_store.list_layers()
+
+
+@app.post("/panorama/layers", status_code=201)
+def create_panorama_layer(req: PanoramaLayerCreate, user: CurrentUser = Depends(get_current_user)):
+    return panorama_store.create_layer(req)
+
+
+@app.put("/panorama/layers/{layer_id}")
+def update_panorama_layer(layer_id: int, req: PanoramaLayerUpdate, user: CurrentUser = Depends(get_current_user)):
+    row = panorama_store.update_layer(layer_id, req)
+    if not row:
+        raise HTTPException(status_code=404, detail="层级不存在")
+    return row
+
+
+@app.delete("/panorama/layers/{layer_id}")
+def delete_panorama_layer(layer_id: int, user: CurrentUser = Depends(get_current_user)):
+    if not panorama_store.delete_layer(layer_id):
+        raise HTTPException(status_code=404, detail="层级不存在")
+    return {"ok": True}
+
+
+@app.get("/panorama/nodes")
+def panorama_nodes(user: CurrentUser = Depends(get_current_user)):
+    return panorama_store.list_nodes()
+
+
+@app.post("/panorama/nodes", status_code=201)
+def create_panorama_node(req: PanoramaNodeCreate, user: CurrentUser = Depends(get_current_user)):
+    return panorama_store.create_node(req)
+
+
+@app.put("/panorama/nodes/{node_id}")
+def update_panorama_node(node_id: int, req: PanoramaNodeUpdate, user: CurrentUser = Depends(get_current_user)):
+    row = panorama_store.update_node(node_id, req)
+    if not row:
+        raise HTTPException(status_code=404, detail="节点不存在")
+    return row
+
+
+@app.delete("/panorama/nodes/{node_id}")
+def delete_panorama_node(node_id: int, user: CurrentUser = Depends(get_current_user)):
+    if not panorama_store.delete_node(node_id):
+        raise HTTPException(status_code=404, detail="节点不存在")
+    return {"ok": True}
+
+
+@app.post("/panorama/nodes/{node_id}/tags")
+def assign_panorama_node_tag(node_id: int, req: PanoramaNodeTagAssign, user: CurrentUser = Depends(get_current_user)):
+    panorama_store.assign_node_tag(node_id, req.tag_id)
+    return {"ok": True}
+
+
+@app.delete("/panorama/nodes/{node_id}/tags/{tag_id}")
+def remove_panorama_node_tag(node_id: int, tag_id: int, user: CurrentUser = Depends(get_current_user)):
+    if not panorama_store.remove_node_tag(node_id, tag_id):
+        raise HTTPException(status_code=404, detail="标签关联不存在")
+    return {"ok": True}
+
+
+@app.get("/panorama/tags")
+def panorama_tags(user: CurrentUser = Depends(get_current_user)):
+    return panorama_store.list_tags()
+
+
+@app.post("/panorama/tags", status_code=201)
+def create_panorama_tag(req: PanoramaTagCreate, user: CurrentUser = Depends(get_current_user)):
+    return panorama_store.create_tag(req)
+
+
+@app.put("/panorama/tags/{tag_id}")
+def update_panorama_tag(tag_id: int, req: PanoramaTagUpdate, user: CurrentUser = Depends(get_current_user)):
+    row = panorama_store.update_tag(tag_id, req)
+    if not row:
+        raise HTTPException(status_code=404, detail="标签不存在")
+    return row
+
+
+@app.delete("/panorama/tags/{tag_id}")
+def delete_panorama_tag(tag_id: int, user: CurrentUser = Depends(get_current_user)):
+    if not panorama_store.delete_tag(tag_id):
+        raise HTTPException(status_code=404, detail="标签不存在")
+    return {"ok": True}
+
+
+@app.get("/panorama/nodes/{node_id}/slots")
+def panorama_node_slots(node_id: int, user: CurrentUser = Depends(get_current_user)):
+    return panorama_store.list_node_slots(node_id)
+
+
+@app.post("/panorama/nodes/{node_id}/agent-slots", status_code=201)
+def create_panorama_agent_slot(node_id: int, req: PanoramaAgentSlotCreate, user: CurrentUser = Depends(get_current_user)):
+    return panorama_store.create_agent_slot(node_id, req)
+
+
+@app.put("/panorama/agent-slots/{slot_id}")
+def update_panorama_agent_slot(slot_id: int, req: PanoramaAgentSlotUpdate, user: CurrentUser = Depends(get_current_user)):
+    row = panorama_store.update_agent_slot(slot_id, req)
+    if not row:
+        raise HTTPException(status_code=404, detail="槽位不存在")
+    return row
+
+
+@app.delete("/panorama/agent-slots/{slot_id}")
+def delete_panorama_agent_slot(slot_id: int, user: CurrentUser = Depends(get_current_user)):
+    if not panorama_store.delete_agent_slot(slot_id):
+        raise HTTPException(status_code=404, detail="槽位不存在")
+    return {"ok": True}
+
+
+@app.post("/panorama/nodes/{node_id}/scenario-slots", status_code=201)
+def create_panorama_scenario_slot(node_id: int, req: PanoramaScenarioSlotCreate, user: CurrentUser = Depends(get_current_user)):
+    return panorama_store.create_scenario_slot(node_id, req)
+
+
+@app.put("/panorama/scenario-slots/{slot_id}")
+def update_panorama_scenario_slot(slot_id: int, req: PanoramaScenarioSlotUpdate, user: CurrentUser = Depends(get_current_user)):
+    row = panorama_store.update_scenario_slot(slot_id, req)
+    if not row:
+        raise HTTPException(status_code=404, detail="槽位不存在")
+    return row
+
+
+@app.delete("/panorama/scenario-slots/{slot_id}")
+def delete_panorama_scenario_slot(slot_id: int, user: CurrentUser = Depends(get_current_user)):
+    if not panorama_store.delete_scenario_slot(slot_id):
+        raise HTTPException(status_code=404, detail="槽位不存在")
+    return {"ok": True}
 
 
 @app.post("/agents/check-name", response_model=NameCheckOut)

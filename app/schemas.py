@@ -131,3 +131,150 @@ class VersionItem(BaseModel):
     created_by_user_id: int
     created_by_username: str
     created_at: datetime
+
+
+class PanoramaLayerCreate(BaseModel):
+    name: str
+    description: Optional[str] = None
+    display_order: int = 0
+    color: str = "#7F77DD"
+    show_label: bool = True
+    style_config: Optional[Dict[str, Any]] = None
+
+
+class PanoramaLayerUpdate(BaseModel):
+    name: Optional[str] = None
+    description: Optional[str] = None
+    display_order: Optional[int] = None
+    color: Optional[str] = None
+    show_label: Optional[bool] = None
+    style_config: Optional[Dict[str, Any]] = None
+
+
+class PanoramaLayerOut(BaseModel):
+    id: int
+    name: str
+    description: Optional[str] = None
+    display_order: int
+    color: str
+    show_label: bool
+    style_config: Optional[Dict[str, Any]] = None
+    created_at: datetime
+    updated_at: Optional[datetime] = None
+
+
+class PanoramaNodeCreate(BaseModel):
+    parent_id: Optional[int] = None
+    layer_id: Optional[int] = None
+    name: str
+    description: Optional[str] = None
+    sort_order: int = 0
+    data_binding_type: str = "none"
+
+    @validator("data_binding_type")
+    def validate_binding_type(cls, value):
+        if value not in ("none", "scenario", "agent"):
+            raise ValueError("data_binding_type must be none, scenario, or agent")
+        return value
+
+
+class PanoramaNodeUpdate(BaseModel):
+    parent_id: Optional[int] = None
+    layer_id: Optional[int] = None
+    name: Optional[str] = None
+    description: Optional[str] = None
+    sort_order: Optional[int] = None
+    data_binding_type: Optional[str] = None
+
+    @validator("data_binding_type")
+    def validate_update_binding_type(cls, value):
+        if value is not None and value not in ("none", "scenario", "agent"):
+            raise ValueError("data_binding_type must be none, scenario, or agent")
+        return value
+
+
+class PanoramaNodeOut(BaseModel):
+    id: int
+    parent_id: Optional[int] = None
+    layer_id: Optional[int] = None
+    name: str
+    description: Optional[str] = None
+    sort_order: int
+    data_binding_type: str
+    created_at: datetime
+    updated_at: Optional[datetime] = None
+
+
+class PanoramaTagCreate(BaseModel):
+    name: str
+    description: Optional[str] = None
+    border_color: str = "#F59E0B"
+
+
+class PanoramaTagUpdate(BaseModel):
+    name: Optional[str] = None
+    description: Optional[str] = None
+    border_color: Optional[str] = None
+
+
+class PanoramaTagOut(BaseModel):
+    id: int
+    name: str
+    description: Optional[str] = None
+    border_color: str
+    created_at: datetime
+    updated_at: Optional[datetime] = None
+
+
+class PanoramaNodeTagAssign(BaseModel):
+    tag_id: int
+
+
+class PanoramaAgentSlotCreate(BaseModel):
+    display_name: str
+    match_name: str
+    description: Optional[str] = None
+    sort_order: int = 0
+
+
+class PanoramaAgentSlotUpdate(BaseModel):
+    display_name: Optional[str] = None
+    match_name: Optional[str] = None
+    description: Optional[str] = None
+    sort_order: Optional[int] = None
+
+
+class PanoramaAgentSlotOut(BaseModel):
+    id: int
+    node_id: int
+    display_name: str
+    match_name: str
+    description: Optional[str] = None
+    sort_order: int
+    created_at: datetime
+    updated_at: Optional[datetime] = None
+
+
+class PanoramaScenarioSlotCreate(BaseModel):
+    display_name: str
+    match_name: str
+    description: Optional[str] = None
+    sort_order: int = 0
+
+
+class PanoramaScenarioSlotUpdate(BaseModel):
+    display_name: Optional[str] = None
+    match_name: Optional[str] = None
+    description: Optional[str] = None
+    sort_order: Optional[int] = None
+
+
+class PanoramaScenarioSlotOut(BaseModel):
+    id: int
+    node_id: int
+    display_name: str
+    match_name: str
+    description: Optional[str] = None
+    sort_order: int
+    created_at: datetime
+    updated_at: Optional[datetime] = None
