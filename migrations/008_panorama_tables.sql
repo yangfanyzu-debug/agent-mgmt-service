@@ -91,11 +91,7 @@ VALUES
   (7, '数据库Agent', '数据库专家 Agent', 6, '#7F77DD', 1, NULL, NOW(), NOW()),
   (8, '基础层Agent', '基础设施 Agent', 7, '#7F77DD', 1, NULL, NOW(), NOW())
 ON DUPLICATE KEY UPDATE
-  `description`=VALUES(`description`),
-  `display_order`=VALUES(`display_order`),
-  `color`=VALUES(`color`),
-  `show_label`=VALUES(`show_label`),
-  `updated_at`=VALUES(`updated_at`);
+  `id`=`id`;
 
 INSERT INTO `agent_mgmt_panorama_tag`
   (`id`, `name`, `description`, `border_color`, `created_at`, `updated_at`)
@@ -103,9 +99,7 @@ VALUES
   (1, '存量', '已有的存量运维场景', '#F59E0B', NOW(), NOW()),
   (2, '增量', '新增的增量运维场景', '#F59E0B', NOW(), NOW())
 ON DUPLICATE KEY UPDATE
-  `description`=VALUES(`description`),
-  `border_color`=VALUES(`border_color`),
-  `updated_at`=VALUES(`updated_at`);
+  `id`=`id`;
 
 INSERT INTO `agent_mgmt_panorama_node`
   (`id`, `parent_id`, `layer_id`, `name`, `description`, `sort_order`, `data_binding_type`, `created_at`, `updated_at`)
@@ -117,12 +111,7 @@ VALUES
   (5, 4, 5, '应用Agent', '负责应用侧日志、链路和恢复验证', 10, 'agent', NOW(), NOW()),
   (6, 4, 6, '中间件Agent', '负责中间件集群健康分析', 20, 'agent', NOW(), NOW())
 ON DUPLICATE KEY UPDATE
-  `parent_id`=VALUES(`parent_id`),
-  `layer_id`=VALUES(`layer_id`),
-  `description`=VALUES(`description`),
-  `sort_order`=VALUES(`sort_order`),
-  `data_binding_type`=VALUES(`data_binding_type`),
-  `updated_at`=VALUES(`updated_at`);
+  `id`=`id`;
 
 INSERT INTO `agent_mgmt_panorama_node_tag`
   (`node_id`, `tag_id`, `created_at`)
@@ -137,12 +126,7 @@ INSERT INTO `agent_mgmt_panorama_scenario_slot`
 VALUES
   (1, 3, '告警源_102', 'alert_analysis', '匹配场景 scenario_name=alert_analysis', 10, NOW(), NOW())
 ON DUPLICATE KEY UPDATE
-  `node_id`=VALUES(`node_id`),
-  `display_name`=VALUES(`display_name`),
-  `match_name`=VALUES(`match_name`),
-  `description`=VALUES(`description`),
-  `sort_order`=VALUES(`sort_order`),
-  `updated_at`=VALUES(`updated_at`);
+  `id`=`id`;
 
 INSERT INTO `agent_mgmt_panorama_agent_slot`
   (`id`, `node_id`, `display_name`, `match_name`, `description`, `sort_order`, `created_at`, `updated_at`)
@@ -150,9 +134,4 @@ VALUES
   (1, 4, '规划Agent_102', 'planner_agent', '匹配 Agent.agent_name=planner_agent', 10, NOW(), NOW()),
   (2, 5, '应用Agent_102', 'es_expert_agent', '匹配 Agent.agent_name=es_expert_agent', 10, NOW(), NOW())
 ON DUPLICATE KEY UPDATE
-  `node_id`=VALUES(`node_id`),
-  `display_name`=VALUES(`display_name`),
-  `match_name`=VALUES(`match_name`),
-  `description`=VALUES(`description`),
-  `sort_order`=VALUES(`sort_order`),
-  `updated_at`=VALUES(`updated_at`);
+  `id`=`id`;
