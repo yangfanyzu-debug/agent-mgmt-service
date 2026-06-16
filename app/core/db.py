@@ -38,11 +38,9 @@ def db_cursor(commit=False):
 
 
 def init_schema():
-    migration = Path(__file__).resolve().parents[2] / "migrations" / "001_create_agent_mgmt_tables.sql"
-    statements = [part.strip() for part in migration.read_text(encoding="utf-8-sig").split(";") if part.strip()]
     with db_cursor(commit=True) as cursor:
-        for statement in statements:
-            cursor.execute(statement)
+        _run_migration(cursor, "001_create_agent_mgmt_tables.sql")
+        _run_migration(cursor, "008_panorama_tables.sql")
         _ensure_column(cursor, "agent_mgmt_agent", "active_version", "VARCHAR(40) DEFAULT NULL AFTER `version`")
         _ensure_column(cursor, "agent_mgmt_agent", "active_content", "MEDIUMTEXT DEFAULT NULL AFTER `active_version`")
         _ensure_column(cursor, "agent_mgmt_agent", "active_tags", "VARCHAR(500) DEFAULT NULL AFTER `active_content`")
@@ -57,6 +55,13 @@ def init_schema():
         _ensure_column(cursor, "agent_mgmt_scenario_version", "skill_selector_dims", "VARCHAR(500) DEFAULT NULL AFTER `keyword_hint`")
         _ensure_column(cursor, "agent_mgmt_scenario_version", "related_agents", "TEXT DEFAULT NULL AFTER `skill_selector_dims`")
         _backfill_agent_active_versions(cursor)
+
+
+def _run_migration(cursor, filename):
+    migration = Path(__file__).resolve().parents[2] / "migrations" / filename
+    statements = [part.strip() for part in migration.read_text(encoding="utf-8-sig").split(";") if part.strip()]
+    for statement in statements:
+        cursor.execute(statement)
 
 
 def _ensure_column(cursor, table, column, ddl):
