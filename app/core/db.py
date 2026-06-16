@@ -58,10 +58,30 @@ def init_schema():
 
 
 def _run_migration(cursor, filename):
+    cursor.execute(
+        """
+        CREATE TABLE IF NOT EXISTS `agent_mgmt_schema_migration` (
+          `filename` VARCHAR(191) NOT NULL,
+          `executed_at` DATETIME NOT NULL,
+          PRIMARY KEY (`filename`)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='Agent management schema migrations'
+        """
+    )
+    cursor.execute(
+        "SELECT `filename` FROM `agent_mgmt_schema_migration` WHERE `filename` = %s",
+        (filename,),
+    )
+    if cursor.fetchone():
+        return
+
     migration = Path(__file__).resolve().parents[2] / "migrations" / filename
     statements = [part.strip() for part in migration.read_text(encoding="utf-8-sig").split(";") if part.strip()]
     for statement in statements:
         cursor.execute(statement)
+    cursor.execute(
+        "INSERT INTO `agent_mgmt_schema_migration` (`filename`, `executed_at`) VALUES (%s, NOW())",
+        (filename,),
+    )
 
 
 def _ensure_column(cursor, table, column, ddl):
