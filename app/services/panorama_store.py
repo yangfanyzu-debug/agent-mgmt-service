@@ -59,7 +59,7 @@ def resolve_deploy_status(row):
     return "inactive"
 
 
-def _parse_agent_skills(agent):
+def _parse_agent_skills(agent, cursor=None):
     if not agent:
         return []
     content = agent.get("active_content") or agent.get("content") or ""
@@ -72,7 +72,18 @@ def _parse_agent_skills(agent):
         skills = [skills]
     if not isinstance(skills, list):
         return []
-    return [{"name": item} for item in skills if isinstance(item, str) and item]
+    result = []
+    for item in skills:
+        if not isinstance(item, str) or not item:
+            continue
+        entry = {"name": item, "is_ready": False}
+        if cursor is not None:
+            cursor.execute("SELECT status FROM skills WHERE title = %s", (item,))
+            row = cursor.fetchone()
+            if row and row.get("status") == "published":
+                entry["is_ready"] = True
+        result.append(entry)
+    return result
 
 
 def list_layers():
@@ -370,7 +381,7 @@ def _resolve_agent_slot(cursor, slot):
         "match_name": slot["match_name"],
         "description": slot.get("description"),
         "status": resolve_deploy_status(agent),
-        "skills": _parse_agent_skills(agent),
+        "skills": _parse_agent_skills(agent, cursor),
     }
 
 
@@ -407,7 +418,7 @@ def _scenario_agents(cursor, scenario):
             "match_name": name,
             "description": None,
             "status": resolve_deploy_status(agent),
-            "skills": _parse_agent_skills(agent),
+            "skills": _parse_agent_skills(agent, cursor),
         })
     return result
 
@@ -436,7 +447,7 @@ def get_stats():
                     agent_deployed += 1
                 else:
                     agent_inactive += 1
-                for skill in _parse_agent_skills(agent):
+                for skill in _parse_agent_skills(agent, cursor):
                     skill_names.add(skill["name"])
 
         return {
