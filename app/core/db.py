@@ -41,7 +41,7 @@ def init_schema():
     with db_cursor(commit=True) as cursor:
         _run_migration(cursor, "001_create_agent_mgmt_tables.sql")
         _run_migration(cursor, "008_panorama_tables.sql")
-        _run_migration(cursor, "009_panorama_extra_parents.sql")
+        _ensure_column(cursor, "agent_mgmt_panorama_node", "extra_parent_ids", "TEXT DEFAULT NULL COMMENT 'JSON array of additional parent node IDs'")
         _ensure_column(cursor, "agent_mgmt_agent", "active_version", "VARCHAR(40) DEFAULT NULL AFTER `version`")
         _ensure_column(cursor, "agent_mgmt_agent", "active_content", "MEDIUMTEXT DEFAULT NULL AFTER `active_version`")
         _ensure_column(cursor, "agent_mgmt_agent", "active_tags", "VARCHAR(500) DEFAULT NULL AFTER `active_content`")
