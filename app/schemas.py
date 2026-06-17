@@ -165,6 +165,7 @@ class PanoramaLayerOut(BaseModel):
 
 class PanoramaNodeCreate(BaseModel):
     parent_id: Optional[int] = None
+    extra_parent_ids: Optional[List[int]] = None
     layer_id: Optional[int] = None
     name: str
     description: Optional[str] = None
@@ -180,6 +181,7 @@ class PanoramaNodeCreate(BaseModel):
 
 class PanoramaNodeUpdate(BaseModel):
     parent_id: Optional[int] = None
+    extra_parent_ids: Optional[List[int]] = None
     layer_id: Optional[int] = None
     name: Optional[str] = None
     description: Optional[str] = None
@@ -196,6 +198,7 @@ class PanoramaNodeUpdate(BaseModel):
 class PanoramaNodeOut(BaseModel):
     id: int
     parent_id: Optional[int] = None
+    extra_parent_ids: Optional[List[int]] = None
     layer_id: Optional[int] = None
     name: str
     description: Optional[str] = None

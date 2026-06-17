@@ -36,6 +36,18 @@ def _json_object(value):
     return parsed if isinstance(parsed, dict) else None
 
 
+def _json_list(value):
+    if not value:
+        return None
+    if isinstance(value, list):
+        return value
+    try:
+        parsed = json.loads(value)
+    except (TypeError, ValueError):
+        return None
+    return parsed if isinstance(parsed, list) else None
+
+
 def _select_one(cursor, sql, params=()):
     cursor.execute(sql, params)
     return cursor.fetchone()
@@ -132,14 +144,15 @@ def list_nodes():
 
 def create_node(data):
     now = _now()
+    extra = _json_text(data.extra_parent_ids) if data.extra_parent_ids else None
     with db_cursor(commit=True) as cursor:
         cursor.execute(
             f"""
             INSERT INTO {NODE_TABLE}
-              (parent_id, layer_id, name, description, sort_order, data_binding_type, created_at, updated_at)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+              (parent_id, extra_parent_ids, layer_id, name, description, sort_order, data_binding_type, created_at, updated_at)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
             """,
-            (data.parent_id, data.layer_id, data.name, data.description, data.sort_order, data.data_binding_type, now, now),
+            (data.parent_id, extra, data.layer_id, data.name, data.description, data.sort_order, data.data_binding_type, now, now),
         )
         node_id = cursor.lastrowid
     return get_node(node_id)
@@ -151,7 +164,9 @@ def get_node(node_id):
 
 
 def update_node(node_id, data):
-    payload = _clean_update_payload(data, {"parent_id", "layer_id", "name", "description", "sort_order", "data_binding_type"})
+    payload = _clean_update_payload(data, {"parent_id", "extra_parent_ids", "layer_id", "name", "description", "sort_order", "data_binding_type"})
+    if "extra_parent_ids" in payload:
+        payload["extra_parent_ids"] = _json_text(payload["extra_parent_ids"])
     return _update_row(NODE_TABLE, node_id, payload)
 
 
@@ -348,6 +363,8 @@ def _build_tree_node(cursor, node, children_by_parent, layer_map, tags_by_node, 
         "id": node["id"],
         "name": node["name"],
         "description": node.get("description"),
+        "parent_id": node.get("parent_id"),
+        "extra_parent_ids": _json_list(node.get("extra_parent_ids")),
         "data_binding_type": node.get("data_binding_type") or "none",
         "layer": _format_layer(layer),
         "tags": tags_by_node.get(node["id"], []),
