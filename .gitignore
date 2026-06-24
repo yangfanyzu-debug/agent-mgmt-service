@@ -1,28 +1,52 @@
+# Python bytecode and cache
 __pycache__/
 *.py[cod]
-.venv/
-venv/
-.env
-.env.*
+*.egg-info/
+*.egg
 .pytest_cache/
 .mypy_cache/
 .ruff_cache/
-*.log
+.hypothesis/
 
-# macOS
-.DS_Store
+# Virtual environments
+.venv/
+venv/
 
-# Local release/build artifacts
+# Environment files
+.env
+!.env.example
+
+# Build and release artifacts
+dist/
+build/
 release/
+wheels/
+pip-wheel-metadata/
+*.tar*
 *.zip
-*.tar
-*.tar.gz
 *.tgz
 
-# Local tooling/cache output
+# Coverage reports
 .coverage
 coverage/
 htmlcov/
+coverage.xml
+
+# Logs
+*.log
+
+# IDE
+.idea/
+.vscode/
+
+# OS
+.DS_Store
+
+# Python version manager
+.python-version
+
+# Unix sockets
+*.sock
 
 # CodeGraph local index
 .codegraph/
